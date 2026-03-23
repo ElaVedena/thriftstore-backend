@@ -1,6 +1,5 @@
 package com.vedathrifts;
 
-import io.github.cdimascio.dotenv.Dotenv;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.ComponentScan;
@@ -15,10 +14,21 @@ import org.springframework.context.annotation.ComponentScan;
 @SpringBootApplication
 public class VedathriftsApplication {
     public static void main(String[] args) {
-        Dotenv dotenv = Dotenv.load();
-        dotenv.entries().forEach(entry -> 
-            System.setProperty(entry.getKey(), entry.getValue())
-        );
+       
+        if (java.nio.file.Files.exists(java.nio.file.Paths.get(".env"))) {
+            try {
+                io.github.cdimascio.dotenv.Dotenv dotenv = io.github.cdimascio.dotenv.Dotenv.load();
+                dotenv.entries().forEach(entry -> 
+                    System.setProperty(entry.getKey(), entry.getValue())
+                );
+                System.out.println("✅ Loaded .env file for local development");
+            } catch (Exception e) {
+                System.out.println("⚠️ Could not load .env file: " + e.getMessage());
+            }
+        } else {
+            System.out.println("ℹ️ No .env file found. Using Railway environment variables.");
+        }
+        
         SpringApplication.run(VedathriftsApplication.class, args);
     }
 }
