@@ -2,7 +2,10 @@ package com.vedathrifts;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
+import org.springframework.web.servlet.config.annotation.CorsRegistry;
+import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 @ComponentScan({
     "com.vedathrifts.controller",
@@ -14,7 +17,7 @@ import org.springframework.context.annotation.ComponentScan;
 @SpringBootApplication
 public class VedathriftsApplication {
     public static void main(String[] args) {
-        // DEBUG: Print Railway MySQL environment variables
+        // Print Railway MySQL environment variables
         System.out.println("=== DEBUG: Railway MySQL Variables ===");
         System.out.println("MYSQLHOST: " + System.getenv("MYSQLHOST"));
         System.out.println("MYSQLPORT: " + System.getenv("MYSQLPORT"));
@@ -38,5 +41,20 @@ public class VedathriftsApplication {
         }
         
         SpringApplication.run(VedathriftsApplication.class, args);
+    }
+    
+    @Bean
+    public WebMvcConfigurer corsConfigurer() {
+        return new WebMvcConfigurer() {
+            @Override
+            public void addCorsMappings(CorsRegistry registry) {
+                registry.addMapping("/**")
+                    .allowedOrigins("http://localhost:3000", "https://vedathrifts.com", "https://www.vedathrifts.com")
+                    .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
+                    .allowedHeaders("*")
+                    .allowCredentials(true)
+                    .maxAge(3600);
+            }
+        };
     }
 }
