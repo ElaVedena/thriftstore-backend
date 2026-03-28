@@ -14,7 +14,15 @@ import org.springframework.context.annotation.ComponentScan;
 @SpringBootApplication
 public class VedathriftsApplication {
     public static void main(String[] args) {
-       
+        // DEBUG: Print Railway MySQL environment variables
+        System.out.println("=== DEBUG: Railway MySQL Variables ===");
+        System.out.println("MYSQLHOST: " + System.getenv("MYSQLHOST"));
+        System.out.println("MYSQLPORT: " + System.getenv("MYSQLPORT"));
+        System.out.println("MYSQL_DATABASE: " + System.getenv("MYSQL_DATABASE"));
+        System.out.println("MYSQLUSER: " + System.getenv("MYSQLUSER"));
+        System.out.println("MYSQLPASSWORD: " + (System.getenv("MYSQLPASSWORD") != null ? "***SET***" : "NOT SET"));
+        System.out.println("=====================================");
+        
         if (java.nio.file.Files.exists(java.nio.file.Paths.get(".env"))) {
             try {
                 io.github.cdimascio.dotenv.Dotenv dotenv = io.github.cdimascio.dotenv.Dotenv.load();
