@@ -45,7 +45,13 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
         
-        configuration.setAllowedOrigins(Arrays.asList("http://localhost:3000"));
+        // ✅ UPDATED: Add your production domains
+        configuration.setAllowedOrigins(Arrays.asList(
+            "http://localhost:3000",
+            "https://vedathrifts.com",
+            "https://www.vedathrifts.com"
+        ));
+        
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
         configuration.setAllowedHeaders(Arrays.asList(
             "Authorization",
@@ -87,7 +93,6 @@ public class SecurityConfig {
                     "/mpesa/ping"
                 ).permitAll()
                 
-         
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 
                 // AUTHENTICATED ENDPOINTS
