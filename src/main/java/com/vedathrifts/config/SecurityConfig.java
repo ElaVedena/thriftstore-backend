@@ -80,9 +80,14 @@ public class SecurityConfig {
             .csrf(csrf -> csrf.disable())
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
-                // 🔓 PUBLIC ENDPOINTS 
+                // 🔓 PUBLIC ENDPOINTS - No authentication required
                 .requestMatchers(
                     "/auth/**",
+                    "/products/**",           
+                    "/categories/**",         
+                    "/featured/**",           
+                    "/new-arrivals/**",      
+                    "/shop/**",               
                     "/error",
                     "/uploads/**",                    
                     "/api/mpesa/callback",             
@@ -95,7 +100,7 @@ public class SecurityConfig {
                 
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 
-                // AUTHENTICATED ENDPOINTS
+                // 🔐 AUTHENTICATED ENDPOINTS 
                 .requestMatchers(
                     "/cart/**",
                     "/wishlist/**",
@@ -103,7 +108,7 @@ public class SecurityConfig {
                     "/users/change-password/**"
                 ).authenticated()
                 
-                // ADMIN ENDPOINTS
+                // 👑 ADMIN ENDPOINTS - Require admin role
                 .requestMatchers(
                     "/admin/**",
                     "/uploads/product-images"  
