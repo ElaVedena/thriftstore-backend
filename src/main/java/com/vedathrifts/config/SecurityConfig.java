@@ -45,7 +45,6 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
         
-        // ✅ UPDATED: Add your production domains
         configuration.setAllowedOrigins(Arrays.asList(
             "http://localhost:3000",
             "https://vedathrifts.com",
@@ -80,14 +79,16 @@ public class SecurityConfig {
             .csrf(csrf -> csrf.disable())
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
-                // 🔓 PUBLIC ENDPOINTS - No authentication required
+                //  PUBLIC ENDPOINTS
                 .requestMatchers(
                     "/auth/**",
                     "/products/**",           
                     "/categories/**",         
                     "/featured/**",           
                     "/new-arrivals/**",      
-                    "/shop/**",               
+                    "/shop/**",
+                    "/reviews/**",            
+                    "/api/reviews/**",        
                     "/error",
                     "/uploads/**",                    
                     "/api/mpesa/callback",             
@@ -108,7 +109,7 @@ public class SecurityConfig {
                     "/users/change-password/**"
                 ).authenticated()
                 
-                // 👑 ADMIN ENDPOINTS - Require admin role
+                // 👑 ADMIN ENDPOINTS 
                 .requestMatchers(
                     "/admin/**",
                     "/uploads/product-images"  

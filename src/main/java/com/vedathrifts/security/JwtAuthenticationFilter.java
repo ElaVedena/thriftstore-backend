@@ -29,6 +29,40 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private static final Logger logger = LoggerFactory.getLogger(JwtAuthenticationFilter.class);
 
     @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) throws ServletException {
+        String path = request.getRequestURI();
+        
+        // Public paths that should skip JWT authentication
+        String[] publicPaths = {
+            "/api/auth/",
+            "/auth/",
+            "/api/products/",
+            "/products/",
+            "/api/categories/",
+            "/categories/",
+            "/api/featured/",
+            "/featured/",
+            "/api/new-arrivals/",
+            "/new-arrivals/",
+            "/api/shop/",
+            "/shop/",
+            "/api/reviews/",
+            "/reviews/",
+            "/error",
+            "/uploads/",
+            "/api/mpesa/callback",
+            "/mpesa/callback"
+        };
+        
+        for (String publicPath : publicPaths) {
+            if (path.startsWith(publicPath)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
         
@@ -70,7 +104,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             }
         } catch (Exception e) {
             logger.error("Cannot set user authentication: {}", e.getMessage());
-            e.printStackTrace();
         }
         
         logger.info("===== END JWT FILTER =====\n");
@@ -79,7 +112,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private String parseJwt(HttpServletRequest request) {
         String headerAuth = request.getHeader("Authorization");
-        logger.info("Authorization header: {}", headerAuth);
         
         if (StringUtils.hasText(headerAuth) && headerAuth.startsWith("Bearer ")) {
             return headerAuth.substring(7);
