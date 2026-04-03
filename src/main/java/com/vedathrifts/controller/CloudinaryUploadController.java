@@ -44,10 +44,15 @@ public class CloudinaryUploadController {
                             .body(new ApiResponse(false, "File must be an image"));
                 }
 
-                // Upload to Cloudinary
-                Map<String, Object> uploadResult = cloudinaryService.uploadImage(
+                // Upload to Cloudinary with transformations
+                // resize to 400x400 WITHOUT cropping (scale), then remove background
+                Map<String, Object> uploadResult = cloudinaryService.uploadImageWithTransformations(
                     file, 
-                    "vedathrifts/products"
+                    "vedathrifts/products",
+                    400,     // width
+                    400,     // height
+                    "scale", // crop mode - NO cropping, scales to fit
+                    true     // remove background
                 );
                 
                 String imageUrl = (String) uploadResult.get("secure_url");
@@ -72,7 +77,6 @@ public class CloudinaryUploadController {
         }
     }
 
-    // NEW ENDPOINT FOR REVIEW IMAGES
     @PostMapping("/review-images")
     @PreAuthorize("isAuthenticated()") 
     public ResponseEntity<?> uploadReviewImages(@RequestParam("files") MultipartFile[] files) {
@@ -109,10 +113,14 @@ public class CloudinaryUploadController {
                             .body(new ApiResponse(false, "File must be an image"));
                 }
 
-                // Upload to Cloudinary in a separate folder for reviews
-                Map<String, Object> uploadResult = cloudinaryService.uploadImage(
+                // Upload to Cloudinary with transformations (smaller for reviews)
+                Map<String, Object> uploadResult = cloudinaryService.uploadImageWithTransformations(
                     file, 
-                    "vedathrifts/reviews" 
+                    "vedathrifts/reviews",
+                    200,    
+                    200,     
+                    "scale", 
+                    false    
                 );
                 
                 String imageUrl = (String) uploadResult.get("secure_url");
