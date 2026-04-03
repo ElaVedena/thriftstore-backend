@@ -89,7 +89,7 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>Thank You for Your Order! 🎉</h1>
+            <h1>Thank You for Your Order</h1>
         </div>
         
         <div class="content">
@@ -100,7 +100,7 @@
             <div class="order-details">
                 <h3>Order Summary</h3>
                 <p><strong>Order Number:</strong> <span th:text="${order.orderNumber}">#12345</span></p>
-                <p><strong>Order Date:</strong> <span th:text="${#temporals.format(order.createdAt, 'dd MMM yyyy HH:mm')}">March 12, 2025</span></p>
+                <p><strong>Order Date:</strong> <span th:text="${#temporals.format(order.createdAt, 'dd MMM yyyy HH:mm')}">March 12, 2026</span></p>
                 
                 <table class="order-table">
                     <thead>
