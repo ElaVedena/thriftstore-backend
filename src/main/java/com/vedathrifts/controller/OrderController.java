@@ -26,6 +26,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -51,6 +52,11 @@ public class OrderController {
     @Autowired
     private EmailService emailService;
     
+    // Statuses that are visible to users (excludes PENDING and PENDING_PAYMENT)
+    private static final List<String> VISIBLE_STATUSES = Arrays.asList(
+        "PAID", "PROCESSING", "SHIPPED", "DELIVERED", "CANCELLED"
+    );
+    
     // Your Resend account email 
     private static final String TEST_EMAIL = "esther.asanda@gmail.com";
 
@@ -71,7 +77,7 @@ public class OrderController {
             order.setSubtotal(orderRequest.getSubtotal());
             order.setShippingCost(orderRequest.getShippingCost());
             order.setTotal(orderRequest.getTotal());
-            order.setStatus("PENDING"); // Order starts as PENDING
+            order.setStatus("PENDING"); // Order starts as PENDING (not shown to users)
             order.setPaymentMethod(orderRequest.getPaymentMethod() != null ? 
                 orderRequest.getPaymentMethod() : "M-PESA");
             order.setPaymentCode(orderRequest.getPaymentCode());
@@ -93,7 +99,7 @@ public class OrderController {
                     item.setSize(itemRequest.getSize());
                     item.setImageUrl(itemRequest.getImageUrl());
                     
-                    //Set the product if productId is provided
+                    // Set the product if productId is provided
                     if (itemRequest.getProductId() != null) {
                         productRepository.findById(itemRequest.getProductId())
                             .ifPresentOrElse(
@@ -150,7 +156,7 @@ public class OrderController {
             Order order = orderRepository.findByOrderNumber(orderNumber)
                     .orElseThrow(() -> new RuntimeException("Order not found with number: " + orderNumber));
             
-            // Update order status to PAID
+            // Update order status to PAID (now visible to users)
             String oldStatus = order.getStatus();
             order.setStatus("PAID");
             order.setMpesaReceiptNumber(mpesaReceiptNumber);
@@ -198,14 +204,13 @@ public class OrderController {
             Order order = orderRepository.findByOrderNumber(orderNumber)
                     .orElseThrow(() -> new RuntimeException("Order not found with number: " + orderNumber));
             
-            // Update order status to FAILED
+            // Update order status to FAILED (not shown to users)
             order.setStatus("PAYMENT_FAILED");
             order.setPaymentFailureReason(failureReason);
             order.setUpdatedAt(LocalDateTime.now());
             
             orderRepository.save(order);
             log.info("✅ Order {} status updated to PAYMENT_FAILED", orderNumber);
-            
             
         } catch (Exception e) {
             log.error("❌ Error handling failed payment: {}", e.getMessage(), e);
@@ -273,7 +278,7 @@ public class OrderController {
         return ResponseEntity.ok(new ApiResponse(true, "Order controller is working"));
     }
 
-    // REGULAR ENDPOINTS
+    // REGULAR ENDPOINTS - Filter out PENDING and PENDING_PAYMENT orders
     @GetMapping("/my-orders")
     public ResponseEntity<?> getMyOrders(@AuthenticationPrincipal UserDetailsImpl currentUser,
                                          @RequestParam(defaultValue = "0") int page,
@@ -282,17 +287,25 @@ public class OrderController {
             log.info("Fetching orders for user: {}", currentUser.getId());
             
             Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
+            // Get all orders first, then filter out pending ones
             Page<Order> ordersPage = orderRepository.findByUserId(currentUser.getId(), pageable);
             
+            // Filter out pending and pending_payment orders
+            List<Order> filteredOrders = ordersPage.getContent().stream()
+                .filter(order -> VISIBLE_STATUSES.contains(order.getStatus()))
+                .collect(Collectors.toList());
+            
             // Convert to DTOs
-            Page<OrderResponse> orderResponses = ordersPage.map(OrderResponse::fromOrder);
+            List<OrderResponse> orderResponses = filteredOrders.stream()
+                .map(OrderResponse::fromOrder)
+                .collect(Collectors.toList());
             
             Map<String, Object> response = new HashMap<>();
-            response.put("content", orderResponses.getContent());
-            response.put("totalPages", orderResponses.getTotalPages());
-            response.put("totalElements", orderResponses.getTotalElements());
-            response.put("currentPage", orderResponses.getNumber());
-            response.put("pageSize", orderResponses.getSize());
+            response.put("content", orderResponses);
+            response.put("totalPages", (int) Math.ceil((double) filteredOrders.size() / size));
+            response.put("totalElements", filteredOrders.size());
+            response.put("currentPage", page);
+            response.put("pageSize", size);
 
             return ResponseEntity.ok(new ApiResponse(true, "Orders retrieved successfully", response));
             
@@ -324,6 +337,12 @@ public class OrderController {
             if (!order.getUser().getId().equals(currentUser.getId()) && !isAdmin) {
                 log.warn("Access denied for user {} to order {}", currentUser.getId(), orderId);
                 return ResponseEntity.status(403).body(new ApiResponse(false, "Access denied"));
+            }
+            
+            // For non-admin users, hide pending orders
+            if (!isAdmin && !VISIBLE_STATUSES.contains(order.getStatus())) {
+                log.warn("User attempted to view pending order {}", orderId);
+                return ResponseEntity.status(403).body(new ApiResponse(false, "Order not available"));
             }
 
             // Return DTO instead of entity
@@ -382,16 +401,30 @@ public class OrderController {
             } else {
                 ordersPage = orderRepository.findAll(pageable);
             }
+            
+            // For admin, filter out PENDING and PENDING_PAYMENT orders unless specifically requested
+            List<Order> filteredOrders;
+            if (status != null && (status.equals("PENDING") || status.equals("PENDING_PAYMENT"))) {
+                // If admin specifically wants to see pending orders, show them
+                filteredOrders = ordersPage.getContent();
+            } else {
+                // Otherwise filter out pending orders
+                filteredOrders = ordersPage.getContent().stream()
+                    .filter(order -> !order.getStatus().equals("PENDING") && !order.getStatus().equals("PENDING_PAYMENT"))
+                    .collect(Collectors.toList());
+            }
 
             // Convert to DTOs
-            Page<OrderResponse> orderResponses = ordersPage.map(OrderResponse::fromOrder);
+            List<OrderResponse> orderResponses = filteredOrders.stream()
+                .map(OrderResponse::fromOrder)
+                .collect(Collectors.toList());
             
             Map<String, Object> response = new HashMap<>();
-            response.put("content", orderResponses.getContent());
-            response.put("totalPages", orderResponses.getTotalPages());
-            response.put("totalElements", orderResponses.getTotalElements());
-            response.put("currentPage", orderResponses.getNumber());
-            response.put("pageSize", orderResponses.getSize());
+            response.put("content", orderResponses);
+            response.put("totalPages", (int) Math.ceil((double) filteredOrders.size() / size));
+            response.put("totalElements", filteredOrders.size());
+            response.put("currentPage", page);
+            response.put("pageSize", size);
 
             return ResponseEntity.ok(new ApiResponse(true, "Orders retrieved successfully", response));
             
@@ -435,7 +468,6 @@ public class OrderController {
                     log.error("❌ Failed to send status update email: {}", e.getMessage());
                 }
             } else {
-               
                 CompletableFuture.runAsync(() -> {
                     try {
                         emailService.sendOrderStatusUpdateEmail(updatedOrder, user, oldStatus, status);
@@ -497,9 +529,7 @@ public class OrderController {
             
             User user = order.getUser();
             
-           
             if (user.getEmail().equals(TEST_EMAIL)) {
-             
                 try {
                     emailService.sendOrderStatusUpdateEmail(updatedOrder, user, oldStatus, "CANCELLED");
                     log.info("✅ Cancellation email sent to test email: {}", user.getEmail());
@@ -507,7 +537,6 @@ public class OrderController {
                     log.error("❌ Failed to send cancellation email: {}", e.getMessage());
                 }
             } else {
-              
                 CompletableFuture.runAsync(() -> {
                     try {
                         emailService.sendOrderStatusUpdateEmail(updatedOrder, user, oldStatus, "CANCELLED");
@@ -562,7 +591,6 @@ public class OrderController {
             User user = order.getUser();
             
             if (user.getEmail().equals(TEST_EMAIL)) {
-              
                 try {
                     emailService.sendOrderConfirmationEmail(order, user);
                     log.info("✅ Order confirmation email resent to test email: {}", user.getEmail());
@@ -574,7 +602,6 @@ public class OrderController {
                         .body(new ApiResponse(false, "Failed to resend confirmation email: " + e.getMessage()));
                 }
             } else {
-               
                 CompletableFuture.runAsync(() -> {
                     try {
                         emailService.sendOrderConfirmationEmail(order, user);
