@@ -44,15 +44,14 @@ public class CloudinaryUploadController {
                             .body(new ApiResponse(false, "File must be an image"));
                 }
 
-                // Upload to Cloudinary with transformations
-                // resize to 400x400 WITHOUT cropping (scale), then remove background
+                // Upload to Cloudinary with resizing ONLY (no background removal)
                 Map<String, Object> uploadResult = cloudinaryService.uploadImageWithTransformations(
                     file, 
                     "vedathrifts/products",
                     400,     // width
                     400,     // height
                     "scale", // crop mode - NO cropping, scales to fit
-                    true     // remove background
+                    false    // removeBackground = false
                 );
                 
                 String imageUrl = (String) uploadResult.get("secure_url");
@@ -84,7 +83,6 @@ public class CloudinaryUploadController {
             System.out.println("=== REVIEW IMAGES UPLOAD ===");
             System.out.println("Number of files: " + files.length);
             
-            // Validate file count 
             if (files.length > 5) {
                 return ResponseEntity.badRequest()
                         .body(new ApiResponse(false, "Maximum 5 images allowed for reviews"));
@@ -95,13 +93,11 @@ public class CloudinaryUploadController {
             for (MultipartFile file : files) {
                 System.out.println("Processing file: " + file.getOriginalFilename());
                 
-                // Validate file
                 if (file.isEmpty()) {
                     return ResponseEntity.badRequest()
                             .body(new ApiResponse(false, "File is empty"));
                 }
                 
-                // Validate file size 
                 if (file.getSize() > 5 * 1024 * 1024) {
                     return ResponseEntity.badRequest()
                             .body(new ApiResponse(false, "File size must be less than 5MB"));
@@ -113,14 +109,14 @@ public class CloudinaryUploadController {
                             .body(new ApiResponse(false, "File must be an image"));
                 }
 
-                // Upload to Cloudinary with transformations (smaller for reviews)
+                // Upload to Cloudinary with resizing for reviews (smaller)
                 Map<String, Object> uploadResult = cloudinaryService.uploadImageWithTransformations(
                     file, 
                     "vedathrifts/reviews",
-                    200,    
-                    200,     
+                    200,     // width
+                    200,     // height
                     "scale", 
-                    false    
+                    false    // no background removal
                 );
                 
                 String imageUrl = (String) uploadResult.get("secure_url");
