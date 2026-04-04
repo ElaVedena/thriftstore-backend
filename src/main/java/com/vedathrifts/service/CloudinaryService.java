@@ -82,35 +82,28 @@ public class CloudinaryService {
             System.out.println("File size: " + multipartFile.getSize());
             System.out.println("Transformations: width=" + width + ", height=" + height + ", crop=" + cropMode + ", removeBackground=" + removeBackground);
             
-            // Build transformation list
-            List<Map<String, Object>> transformation = new ArrayList<>();
+            // Build transformation string (Cloudinary expects a string, not a list of maps)
+            StringBuilder transformationStr = new StringBuilder();
+            transformationStr.append("w_").append(width);
+            transformationStr.append(",h_").append(height);
+            transformationStr.append(",c_").append(cropMode);
             
-            // Step 1: Resize without cropping (scale mode)
-            Map<String, Object> resizeParams = new HashMap<>();
-            resizeParams.put("width", width);
-            resizeParams.put("height", height);
-            resizeParams.put("crop", cropMode); // "scale" = no cropping, "fill" = cropping
-            transformation.add(resizeParams);
-            
-            // Step 2: Remove background (if requested)
+            // Add background removal if requested (correct syntax: e_bgremoval)
             if (removeBackground) {
-                Map<String, Object> bgRemovalParams = new HashMap<>();
-                bgRemovalParams.put("effect", "background_removal");
-                transformation.add(bgRemovalParams);
+                transformationStr.append(",e_bgremoval");
             }
             
-            // Step 3: Optimize for web
-            Map<String, Object> optimizeParams = new HashMap<>();
-            optimizeParams.put("quality", "auto");
-            optimizeParams.put("fetch_format", "auto"); // Converts to WebP if supported
-            transformation.add(optimizeParams);
+            // Add optimization
+            transformationStr.append(",q_auto,f_auto");
+            
+            System.out.println("Transformation string: " + transformationStr.toString());
             
             Map<String, Object> uploadParams = ObjectUtils.asMap(
                 "folder", folder,
                 "resource_type", "image",
                 "use_filename", true,
                 "unique_filename", true,
-                "transformation", transformation
+                "transformation", transformationStr.toString()  // String format works better
             );
             
             Map<String, Object> uploadResult = cloudinary.uploader().upload(fileToUpload, uploadParams);
@@ -129,6 +122,55 @@ public class CloudinaryService {
             if (fileToUpload.exists()) {
                 fileToUpload.delete();
                 System.out.println("Temp file deleted");
+            }
+        }
+    }
+
+    // Alternative: Using Cloudinary's Transformation class (more readable)
+    public Map<String, Object> uploadImageWithTransformationClass(MultipartFile multipartFile, 
+                                                                  String folder, 
+                                                                  int width, 
+                                                                  int height, 
+                                                                  String cropMode, 
+                                                                  boolean removeBackground) throws IOException {
+        File fileToUpload = convertMultiPartToFile(multipartFile);
+        
+        try {
+            // Build transformation using Cloudinary's Transformation class
+            Transformation transformation = new Transformation()
+                    .width(width)
+                    .height(height)
+                    .crop(cropMode);
+            
+            if (removeBackground) {
+                transformation.effect("bgremoval");
+            }
+            
+            transformation.quality("auto").fetchFormat("auto");
+            
+            System.out.println("Transformation: " + transformation.toString());
+            
+            Map<String, Object> uploadParams = ObjectUtils.asMap(
+                "folder", folder,
+                "resource_type", "image",
+                "use_filename", true,
+                "unique_filename", true,
+                "transformation", transformation
+            );
+            
+            Map<String, Object> uploadResult = cloudinary.uploader().upload(fileToUpload, uploadParams);
+            
+            System.out.println("Upload successful!");
+            System.out.println("URL: " + uploadResult.get("secure_url"));
+            
+            return uploadResult;
+            
+        } catch (IOException e) {
+            System.err.println("Cloudinary upload failed: " + e.getMessage());
+            throw new IOException("Cloudinary upload failed: " + e.getMessage());
+        } finally {
+            if (fileToUpload.exists()) {
+                fileToUpload.delete();
             }
         }
     }
@@ -192,7 +234,7 @@ public class CloudinaryService {
                 .fetchFormat("auto");
         
         if (removeBackground) {
-            transformation.effect("background_removal");
+            transformation.effect("bgremoval");
         }
         
         return cloudinary.url()
