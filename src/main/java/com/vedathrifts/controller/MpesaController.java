@@ -28,7 +28,7 @@ import java.util.HashMap;
 @RestController
 @RequestMapping("/mpesa")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "http://localhost:3000", allowCredentials = "true")
+@CrossOrigin(origins = {"http://localhost:3000", "https://vedathrifts.com"}, allowCredentials = "true")
 public class MpesaController {
 
     private final MpesaService mpesaService;
@@ -69,8 +69,9 @@ public class MpesaController {
                     "STK push sent successfully. Check your phone for the M-Pesa prompt.", response));
             } else {
                 String message = response != null ? response.getResponseDescription() : "No response from M-Pesa";
+                log.error("STK push failed: {}", message);
                 return ResponseEntity.badRequest()
-                    .body(new ApiResponse(false, message));
+                    .body(new ApiResponse(false, "Payment initiation failed: " + message));
             }
 
         } catch (Exception e) {
@@ -225,6 +226,62 @@ public class MpesaController {
             response.put("ResultCode", 0);
             response.put("ResultDesc", "Success");
             return ResponseEntity.ok(response);
+        }
+    }
+
+    /**
+     * Test endpoint to check credentials
+     */
+    @GetMapping("/test-credentials")
+    public ResponseEntity<?> testCredentials() {
+        log.info("========== TESTING M-PESA CREDENTIALS ==========");
+        try {
+            String token = mpesaService.getAccessToken();
+            if (token != null && !token.isEmpty()) {
+                log.info("✅ Credentials are valid! Token obtained successfully");
+                return ResponseEntity.ok(new ApiResponse(true, "Credentials are valid! Token obtained: " + token.substring(0, 20) + "..."));
+            } else {
+                log.error("❌ Invalid credentials - Failed to get token");
+                return ResponseEntity.status(401)
+                    .body(new ApiResponse(false, "Invalid credentials - Check Consumer Key and Secret"));
+            }
+        } catch (Exception e) {
+            log.error("❌ Credentials test failed: {}", e.getMessage());
+            return ResponseEntity.status(401)
+                .body(new ApiResponse(false, "Credentials test failed: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * Test STK push directly
+     */
+    @PostMapping("/test-stk")
+    public ResponseEntity<?> testStkPush(@RequestParam String phoneNumber, @RequestParam double amount) {
+        log.info("========== TEST STK PUSH ==========");
+        log.info("Phone: {}, Amount: {}", phoneNumber, amount);
+        
+        MpesaPaymentRequest request = new MpesaPaymentRequest();
+        request.setPhoneNumber(phoneNumber);
+        request.setAmount(amount);
+        request.setAccountReference("TEST" + System.currentTimeMillis());
+        request.setTransactionDesc("Test payment");
+        request.setOrderId("TEST-ORDER");
+        
+        try {
+            StkPushResponse response = mpesaService.initiateStkPush(request);
+            log.info("Test STK Response: {}", response);
+            
+            if (response != null && "0".equals(response.getResponseCode())) {
+                return ResponseEntity.ok(new ApiResponse(true, "STK push sent successfully!", response));
+            } else {
+                String errorMsg = response != null ? response.getResponseDescription() : "No response";
+                return ResponseEntity.badRequest()
+                    .body(new ApiResponse(false, "STK push failed: " + errorMsg));
+            }
+        } catch (Exception e) {
+            log.error("Test STK push failed: ", e);
+            return ResponseEntity.status(500)
+                .body(new ApiResponse(false, "Test failed: " + e.getMessage()));
         }
     }
 
