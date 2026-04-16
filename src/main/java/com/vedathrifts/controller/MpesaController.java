@@ -1,5 +1,6 @@
 package com.vedathrifts.controller;
 
+import com.vedathrifts.config.MpesaConfig;
 import com.vedathrifts.dto.request.MpesaPaymentRequest;
 import com.vedathrifts.dto.response.ApiResponse;
 import com.vedathrifts.dto.response.StkPushResponse;
@@ -32,6 +33,7 @@ import java.util.HashMap;
 public class MpesaController {
 
     private final MpesaService mpesaService;
+    private final MpesaConfig mpesaConfig;  // ADD THIS
     private final OrderRepository orderRepository;
     private final ProductRepository productRepository;
     private final UserRepository userRepository;
@@ -163,7 +165,9 @@ public class MpesaController {
                     order.setStatus("PAID");
                     order.setMpesaReceiptNumber(receiptNumber);
                     order.setPaymentCode(receiptNumber);
-                    order.setMpesaTransactionDate(transactionDate);
+                    if (transactionDate != null) {
+                        order.setMpesaTransactionDate(transactionDate);
+                    }
                     order.setUpdatedAt(LocalDateTime.now());
                     
                     //UPDATE PRODUCT STOCK 
@@ -195,11 +199,15 @@ public class MpesaController {
                     //SEND CONFIRMATION EMAIL AFTER PAYMENT
                     try {
                         User user = savedOrder.getUser();
-                        log.info("📧 Sending confirmation email for order: {} to: {}", 
-                            savedOrder.getOrderNumber(), user.getEmail());
-                        
-                        emailService.sendOrderConfirmationEmail(savedOrder, user);
-                        log.info("✅ Confirmation email sent to {}", user.getEmail());
+                        if (user != null && user.getEmail() != null) {
+                            log.info("📧 Sending confirmation email for order: {} to: {}", 
+                                savedOrder.getOrderNumber(), user.getEmail());
+                            
+                            emailService.sendOrderConfirmationEmail(savedOrder, user);
+                            log.info("✅ Confirmation email sent to {}", user.getEmail());
+                        } else {
+                            log.warn("User or email is null for order: {}", savedOrder.getOrderNumber());
+                        }
                     } catch (Exception e) {
                         log.error("❌ Failed to send confirmation email: {}", e.getMessage(), e);
                     }
@@ -230,25 +238,31 @@ public class MpesaController {
     }
 
     /**
-     * Test endpoint to check credentials
+     * Test endpoint to check credentials - USE THIS FIRST!
+     * Call this to verify your production credentials are working
      */
     @GetMapping("/test-credentials")
     public ResponseEntity<?> testCredentials() {
         log.info("========== TESTING M-PESA CREDENTIALS ==========");
+        log.info("Environment: {}", mpesaConfig.getEnvironment());
+        log.info("Base URL: {}", mpesaConfig.getBaseUrl());
+        log.info("Shortcode: {}", mpesaConfig.getShortcode());
+        
         try {
             String token = mpesaService.getAccessToken();
             if (token != null && !token.isEmpty()) {
                 log.info("✅ Credentials are valid! Token obtained successfully");
-                return ResponseEntity.ok(new ApiResponse(true, "Credentials are valid! Token obtained: " + token.substring(0, 20) + "..."));
+                return ResponseEntity.ok(new ApiResponse(true, 
+                    "✅ Credentials are valid! Token obtained: " + token.substring(0, 20) + "..."));
             } else {
                 log.error("❌ Invalid credentials - Failed to get token");
                 return ResponseEntity.status(401)
-                    .body(new ApiResponse(false, "Invalid credentials - Check Consumer Key and Secret"));
+                    .body(new ApiResponse(false, "❌ Invalid credentials - Check Consumer Key and Secret"));
             }
         } catch (Exception e) {
             log.error("❌ Credentials test failed: {}", e.getMessage());
             return ResponseEntity.status(401)
-                .body(new ApiResponse(false, "Credentials test failed: " + e.getMessage()));
+                .body(new ApiResponse(false, "❌ Credentials test failed: " + e.getMessage()));
         }
     }
 
@@ -259,6 +273,13 @@ public class MpesaController {
     public ResponseEntity<?> testStkPush(@RequestParam String phoneNumber, @RequestParam double amount) {
         log.info("========== TEST STK PUSH ==========");
         log.info("Phone: {}, Amount: {}", phoneNumber, amount);
+        
+        // First test credentials
+        String token = mpesaService.getAccessToken();
+        if (token == null) {
+            return ResponseEntity.status(401)
+                .body(new ApiResponse(false, "❌ Invalid credentials. Check your Consumer Key and Secret first."));
+        }
         
         MpesaPaymentRequest request = new MpesaPaymentRequest();
         request.setPhoneNumber(phoneNumber);
@@ -272,16 +293,16 @@ public class MpesaController {
             log.info("Test STK Response: {}", response);
             
             if (response != null && "0".equals(response.getResponseCode())) {
-                return ResponseEntity.ok(new ApiResponse(true, "STK push sent successfully!", response));
+                return ResponseEntity.ok(new ApiResponse(true, "✅ STK push sent successfully! Check your phone.", response));
             } else {
                 String errorMsg = response != null ? response.getResponseDescription() : "No response";
                 return ResponseEntity.badRequest()
-                    .body(new ApiResponse(false, "STK push failed: " + errorMsg));
+                    .body(new ApiResponse(false, "❌ STK push failed: " + errorMsg));
             }
         } catch (Exception e) {
             log.error("Test STK push failed: ", e);
             return ResponseEntity.status(500)
-                .body(new ApiResponse(false, "Test failed: " + e.getMessage()));
+                .body(new ApiResponse(false, "❌ Test failed: " + e.getMessage()));
         }
     }
 
@@ -347,7 +368,6 @@ public class MpesaController {
         return ResponseEntity.ok(new ApiResponse(true, "M-Pesa service is running"));
     }
     
-
     /**
      * Get access token (for testing)
      */

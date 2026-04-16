@@ -23,6 +23,23 @@ public class MpesaConfig {
     @PostConstruct
     public void validateAndLog() {
         log.info("========== M-PESA CONFIGURATION LOADED ==========");
+        
+        // Set default environment if not specified
+        if (environment == null || environment.isEmpty()) {
+            environment = "sandbox";
+            log.warn("⚠️ Environment not set, defaulting to: {}", environment);
+        }
+        
+        // Set default base URL if not specified
+        if (baseUrl == null || baseUrl.isEmpty()) {
+            if (isProduction()) {
+                baseUrl = "https://api.safaricom.co.ke";
+            } else {
+                baseUrl = "https://sandbox.safaricom.co.ke";
+            }
+            log.warn("⚠️ Base URL not set, defaulting to: {}", baseUrl);
+        }
+        
         log.info("Environment: {}", environment);
         log.info("Base URL: {}", baseUrl);
         log.info("Shortcode: {}", shortcode);
@@ -45,9 +62,6 @@ public class MpesaConfig {
         if (shortcode == null || shortcode.isEmpty()) {
             log.error("❌ MPESA_SHORTCODE is not set!");
         }
-        if (baseUrl == null || baseUrl.isEmpty()) {
-            log.error("❌ MPESA_BASE_URL is not set!");
-        }
         if (callbackUrl == null || callbackUrl.isEmpty()) {
             log.warn("⚠️ MPESA_CALLBACK_URL is not set!");
         }
@@ -57,8 +71,10 @@ public class MpesaConfig {
             log.info("🔧 Running in SANDBOX mode - using test credentials");
             log.info("   Test phone number: 254708374149");
             log.info("   Test PIN: 123456");
+            log.info("   Test shortcode: 174379");
         } else if (isProduction()) {
             log.info("🚀 Running in PRODUCTION mode - LIVE transactions will be processed");
+            log.info("   ⚠️ Make sure you have sufficient funds in your paybill/till");
         } else {
             log.warn("⚠️ Environment not set to 'sandbox' or 'production' - using: {}", environment);
         }
@@ -90,6 +106,13 @@ public class MpesaConfig {
      */
     public String getPartyB() {
         return getStkShortcode();
+    }
+    
+    /**
+     * Get the callback URL
+     */
+    public String getCallbackUrl() {
+        return callbackUrl;
     }
     
     /**

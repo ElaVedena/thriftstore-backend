@@ -22,7 +22,6 @@ import java.util.Base64;
 import java.util.Date;
 import java.util.TimeZone;
 
-
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -39,6 +38,7 @@ public class MpesaService {
         log.info("========== GETTING ACCESS TOKEN ==========");
         log.info("Environment: {}", mpesaConfig.isProduction() ? "PRODUCTION" : "SANDBOX");
         log.info("Base URL: {}", mpesaConfig.getBaseUrl());
+        log.info("Consumer Key present: {}", mpesaConfig.getConsumerKey() != null && !mpesaConfig.getConsumerKey().isEmpty());
         
         try {
             String auth = mpesaConfig.getConsumerKey() + ":" + mpesaConfig.getConsumerSecret();
@@ -61,33 +61,59 @@ public class MpesaService {
             );
 
             if (response.getBody() != null) {
-                log.info("Access token obtained successfully");
+                log.info("✅ Access token obtained successfully");
                 log.info("Expires in: {} seconds", response.getBody().getExpiresIn());
                 return response.getBody().getAccessToken();
             }
         } catch (HttpClientErrorException e) {
-            log.error("HTTP Error getting access token: {} - {}", 
+            log.error("❌ HTTP Error getting access token: {} - {}", 
                 e.getStatusCode(), e.getResponseBodyAsString());
+            if (e.getStatusCode() == HttpStatus.UNAUTHORIZED) {
+                log.error("   This means your Consumer Key or Consumer Secret is incorrect!");
+                log.error("   Check MPESA_CONSUMER_KEY and MPESA_CONSUMER_SECRET in Railway variables");
+            }
         } catch (RestClientException e) {
-            log.error("RestClient Error getting access token: {}", e.getMessage());
+            log.error("❌ RestClient Error getting access token: {}", e.getMessage());
         } catch (Exception e) {
-            log.error("Unexpected error getting access token: {}", e.getMessage(), e);
+            log.error("❌ Unexpected error getting access token: {}", e.getMessage(), e);
         }
         return null;
     }
 
     /**
      * Generate STK push password
-     * Note: In production, use the actual shortcode (not test shortcode 174379)
+     * For production: uses your actual shortcode
+     * For sandbox: uses 174379
      */
     public String generatePassword() {
-        String shortcode = mpesaConfig.getShortcode();
-        String passkey = mpesaConfig.getPasskey();
+        String shortcode;
+        String passkey;
+        
+        if (mpesaConfig.isSandbox()) {
+            shortcode = "174379";
+            passkey = "bfb279f9aa9bdbcf158e97dd71a467cd2e0c893059b10f78e6b72ada1ed2c919";
+            log.debug("Using SANDBOX credentials for password generation");
+        } else {
+            shortcode = mpesaConfig.getShortcode();
+            passkey = mpesaConfig.getPasskey();
+            log.debug("Using PRODUCTION credentials for password generation");
+        }
+        
         String timestamp = generateTimestamp();
         String data = shortcode + passkey + timestamp;
         String encoded = Base64.getEncoder().encodeToString(data.getBytes(StandardCharsets.UTF_8));
         log.debug("Generated password - Shortcode: {}, Timestamp: {}", shortcode, timestamp);
         return encoded;
+    }
+
+    /**
+     * Get the business shortcode for STK push
+     */
+    public String getBusinessShortcode() {
+        if (mpesaConfig.isSandbox()) {
+            return "174379";
+        }
+        return mpesaConfig.getShortcode();
     }
 
     /**
@@ -112,10 +138,10 @@ public class MpesaService {
             // Get access token
             String accessToken = getAccessToken();
             if (accessToken == null) {
-                log.error("Failed to get access token");
-                throw new RuntimeException("Failed to get access token from Safaricom");
+                log.error("❌ Failed to get access token");
+                throw new RuntimeException("Failed to get access token from Safaricom. Check your consumer key and secret.");
             }
-            log.info("Access token obtained successfully");
+            log.info("✅ Access token obtained successfully");
 
             // Format phone number
             String phone = formatPhoneNumber(request.getPhoneNumber());
@@ -124,16 +150,19 @@ public class MpesaService {
             // Generate password and timestamp
             String password = generatePassword();
             String timestamp = generateTimestamp();
+            String businessShortcode = getBusinessShortcode();
+            
+            log.info("Business Shortcode: {}", businessShortcode);
             log.info("Timestamp: {}", timestamp);
 
             // Build STK push request
             StkPushRequest stkRequest = new StkPushRequest();
-            stkRequest.setBusinessShortCode(mpesaConfig.getShortcode());
+            stkRequest.setBusinessShortCode(businessShortcode);
             stkRequest.setPassword(password);
             stkRequest.setTimestamp(timestamp);
             stkRequest.setAmount(String.valueOf(request.getAmount().intValue()));
             stkRequest.setPartyA(phone);
-            stkRequest.setPartyB(mpesaConfig.getShortcode());
+            stkRequest.setPartyB(businessShortcode);
             stkRequest.setPhoneNumber(phone);
             stkRequest.setCallBackURL(mpesaConfig.getCallbackUrl());
             stkRequest.setAccountReference(request.getAccountReference());
@@ -167,29 +196,49 @@ public class MpesaService {
             
             if (response.getBody() != null) {
                 StkPushResponse body = response.getBody();
-                log.info("STK Push Response Body:");
-                log.info("  MerchantRequestID: {}", body.getMerchantRequestID());
-                log.info("  CheckoutRequestID: {}", body.getCheckoutRequestID());
+                log.info("STK Push Response:");
                 log.info("  ResponseCode: {}", body.getResponseCode());
                 log.info("  ResponseDescription: {}", body.getResponseDescription());
+                log.info("  CheckoutRequestID: {}", body.getCheckoutRequestID());
                 log.info("  CustomerMessage: {}", body.getCustomerMessage());
+                
+                // Save checkoutRequestId to order if orderId is provided
+                if (request.getOrderId() != null && body.getCheckoutRequestID() != null) {
+                    orderRepository.findByOrderNumber(request.getOrderId())
+                        .ifPresent(order -> {
+                            order.setCheckoutRequestId(body.getCheckoutRequestID());
+                            orderRepository.save(order);
+                            log.info("✅ Saved checkoutRequestId for order: {}", request.getOrderId());
+                        });
+                }
                 
                 return body;
             } else {
-                log.error("Empty response from STK push");
+                log.error("❌ Empty response from STK push");
                 throw new RuntimeException("Empty response from M-Pesa");
             }
 
         } catch (HttpClientErrorException e) {
-            log.error("HTTP Error initiating STK push: {} - {}", 
+            log.error("❌ HTTP Error initiating STK push: {} - {}", 
                 e.getStatusCode(), e.getResponseBodyAsString());
+            
+            String errorBody = e.getResponseBodyAsString();
+            if (errorBody.contains("Wrong credentials")) {
+                log.error("   This means your production credentials are incorrect!");
+                log.error("   Check that you have set the correct values in Railway:");
+                log.error("   - MPESA_CONSUMER_KEY (production key, not sandbox)");
+                log.error("   - MPESA_CONSUMER_SECRET (production secret, not sandbox)");
+                log.error("   - MPESA_SHORTCODE (your actual production shortcode, not 174379)");
+                log.error("   - MPESA_PASSKEY (your production passkey)");
+            }
+            
             throw new RuntimeException("STK push failed with HTTP " + e.getStatusCode() + 
-                ": " + e.getResponseBodyAsString());
+                ": " + errorBody);
         } catch (RestClientException e) {
-            log.error("RestClient Error initiating STK push: {}", e.getMessage(), e);
+            log.error("❌ RestClient Error initiating STK push: {}", e.getMessage(), e);
             throw new RuntimeException("STK push failed: " + e.getMessage());
         } catch (Exception e) {
-            log.error("Unexpected error initiating STK push: {}", e.getMessage(), e);
+            log.error("❌ Unexpected error initiating STK push: {}", e.getMessage(), e);
             throw new RuntimeException("STK push failed: " + e.getMessage());
         }
     }
@@ -199,7 +248,6 @@ public class MpesaService {
      */
     public void handleCallback(MpesaCallback callback) {
         log.info("========== PROCESSING M-PESA CALLBACK ==========");
-        log.info("Callback received: {}", callback);
 
         try {
             if (callback.getBody() == null || callback.getBody().getStkCallback() == null) {
@@ -233,7 +281,6 @@ public class MpesaService {
                 String receiptNumber = null;
                 Double amount = null;
                 String phoneNumber = null;
-                Long transactionDate = null;
 
                 if (stkCallback.getCallbackMetadata() != null && 
                     stkCallback.getCallbackMetadata().getItem() != null) {
@@ -249,9 +296,6 @@ public class MpesaService {
                             case "PhoneNumber":
                                 phoneNumber = item.getValue().toString();
                                 break;
-                            case "TransactionDate":
-                                transactionDate = Long.parseLong(item.getValue().toString());
-                                break;
                         }
                     }
                 }
@@ -260,7 +304,7 @@ public class MpesaService {
                 order.setMpesaReceiptNumber(receiptNumber);
                 order.setPaymentCode(receiptNumber);
                 orderRepository.save(order);
-                log.info("Order {} updated to PAID", order.getOrderNumber());
+                log.info("✅ Order {} updated to PAID", order.getOrderNumber());
 
             } else {
                 log.warn("❌ Payment failed for CheckoutRequestID: {}", checkoutRequestId);
