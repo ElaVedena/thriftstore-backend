@@ -346,6 +346,7 @@ public class MpesaController {
     public ResponseEntity<?> test() {
         return ResponseEntity.ok(new ApiResponse(true, "M-Pesa service is running"));
     }
+    
 
     /**
      * Get access token (for testing)

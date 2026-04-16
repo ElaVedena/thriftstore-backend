@@ -19,6 +19,7 @@ public class MpesaConfig {
     private String baseUrl;
     private String callbackUrl;
     
+    
     @PostConstruct
     public void validateAndLog() {
         log.info("========== M-PESA CONFIGURATION LOADED ==========");
