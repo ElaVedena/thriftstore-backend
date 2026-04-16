@@ -19,4 +19,8 @@ public class MpesaConfig {
     public boolean isSandbox() {
         return "sandbox".equalsIgnoreCase(environment);
     }
+    
+    public boolean isProduction() {
+        return "production".equalsIgnoreCase(environment);
+    }
 }

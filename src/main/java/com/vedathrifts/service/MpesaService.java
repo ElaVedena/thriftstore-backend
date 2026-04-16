@@ -36,7 +36,7 @@ public class MpesaService {
      */
     public String getAccessToken() {
         log.info("========== GETTING ACCESS TOKEN ==========");
-        log.info("Consumer Key: {}", maskString(mpesaConfig.getConsumerKey()));
+        log.info("Environment: {}", mpesaConfig.isProduction() ? "PRODUCTION" : "SANDBOX");
         log.info("Base URL: {}", mpesaConfig.getBaseUrl());
         
         try {
@@ -77,6 +77,7 @@ public class MpesaService {
 
     /**
      * Generate STK push password
+     * Note: In production, use the actual shortcode (not test shortcode 174379)
      */
     public String generatePassword() {
         String shortcode = mpesaConfig.getShortcode();
@@ -98,10 +99,11 @@ public class MpesaService {
     }
 
     /**
-     * Initiate STK Push - Now only initiates payment, doesn't create order
+     * Initiate STK Push
      */
     public StkPushResponse initiateStkPush(MpesaPaymentRequest request) {
         log.info("========== INITIATING STK PUSH ==========");
+        log.info("Environment: {}", mpesaConfig.isProduction() ? "PRODUCTION" : "SANDBOX");
         log.info("Phone: {}, Amount: {}", request.getPhoneNumber(), request.getAmount());
         log.info("Account Reference: {}", request.getAccountReference());
         
@@ -192,7 +194,7 @@ public class MpesaService {
     }
 
     /**
-     * Handle M-Pesa callback - Updates order status based on payment result
+     * Handle M-Pesa callback
      */
     public void handleCallback(MpesaCallback callback) {
         log.info("========== PROCESSING M-PESA CALLBACK ==========");
@@ -214,7 +216,6 @@ public class MpesaService {
             log.info("  ResultCode: {}", resultCode);
             log.info("  ResultDesc: {}", resultDesc);
 
-            // Find order by checkoutRequestId
             Order order = orderRepository.findByCheckoutRequestId(checkoutRequestId)
                 .orElse(null);
             
@@ -226,7 +227,6 @@ public class MpesaService {
             log.info("Found order: {} with status: {}", order.getOrderNumber(), order.getStatus());
 
             if (resultCode == 0) {
-                // Payment successful
                 log.info("✅ Payment successful for CheckoutRequestID: {}", checkoutRequestId);
                 
                 String receiptNumber = null;
@@ -237,10 +237,7 @@ public class MpesaService {
                 if (stkCallback.getCallbackMetadata() != null && 
                     stkCallback.getCallbackMetadata().getItem() != null) {
                     
-                    log.info("Callback Metadata Items:");
                     for (var item : stkCallback.getCallbackMetadata().getItem()) {
-                        log.info("  {}: {}", item.getName(), item.getValue());
-                        
                         switch (item.getName()) {
                             case "MpesaReceiptNumber":
                                 receiptNumber = (String) item.getValue();
@@ -258,13 +255,6 @@ public class MpesaService {
                     }
                 }
 
-                log.info("Payment Details:");
-                log.info("  Receipt Number: {}", receiptNumber);
-                log.info("  Amount: {}", amount);
-                log.info("  Phone Number: {}", phoneNumber);
-                log.info("  Transaction Date: {}", transactionDate);
-
-                // Update order status to PAID
                 order.setStatus("PAID");
                 order.setMpesaReceiptNumber(receiptNumber);
                 order.setPaymentCode(receiptNumber);
@@ -272,11 +262,7 @@ public class MpesaService {
                 log.info("Order {} updated to PAID", order.getOrderNumber());
 
             } else {
-                // Payment failed
                 log.warn("❌ Payment failed for CheckoutRequestID: {}", checkoutRequestId);
-                log.warn("Failure reason: {}", resultDesc);
-                
-                // Update order status to PAYMENT_FAILED
                 order.setStatus("PAYMENT_FAILED");
                 order.setPaymentFailureReason(resultDesc);
                 orderRepository.save(order);
@@ -291,37 +277,22 @@ public class MpesaService {
      * Format phone number to 254XXXXXXXXX
      */
     private String formatPhoneNumber(String phone) {
-        log.info("Formatting phone number: {}", phone);
-        
-        // Remove any non-digit characters
         String cleaned = phone.replaceAll("[^0-9]", "");
-        log.info("Cleaned phone: {}", cleaned);
         
         String formatted;
-        // If starts with 0, replace with 254
         if (cleaned.startsWith("0")) {
             formatted = "254" + cleaned.substring(1);
-        }
-        // If starts with 7 or 1, add 254
-        else if (cleaned.startsWith("7") || cleaned.startsWith("1")) {
+        } else if (cleaned.startsWith("7") || cleaned.startsWith("1")) {
             formatted = "254" + cleaned;
-        }
-        // If already 254, return as is
-        else if (cleaned.startsWith("254")) {
+        } else if (cleaned.startsWith("254")) {
             formatted = cleaned;
-        }
-        // Default: return as is with 254 prefix
-        else {
+        } else {
             formatted = "254" + cleaned;
         }
         
-        log.info("Formatted phone: {}", formatted);
         return formatted;
     }
     
-    /**
-     * Mask sensitive strings for logging
-     */
     private String maskString(String input) {
         if (input == null || input.length() < 8) {
             return "****";
