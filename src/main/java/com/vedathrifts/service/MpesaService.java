@@ -117,6 +117,19 @@ public class MpesaService {
     }
 
     /**
+     * Get transaction type based on shortcode type
+     * For Till Numbers: CustomerBuyGoodsOnline
+     * For Paybill: CustomerPayBillOnline
+     */
+    public String getTransactionType() {
+        if (mpesaConfig.isSandbox()) {
+            return "CustomerBuyGoodsOnline";
+        }
+        // For production Till Number, use CustomerBuyGoodsOnline
+        return "CustomerBuyGoodsOnline";
+    }
+
+    /**
      * Generate timestamp in format YYYYMMDDHHmmss
      */
     public String generateTimestamp() {
@@ -151,8 +164,10 @@ public class MpesaService {
             String password = generatePassword();
             String timestamp = generateTimestamp();
             String businessShortcode = getBusinessShortcode();
+            String transactionType = getTransactionType();
             
             log.info("Business Shortcode: {}", businessShortcode);
+            log.info("Transaction Type: {}", transactionType);
             log.info("Timestamp: {}", timestamp);
 
             // Build STK push request
@@ -160,6 +175,7 @@ public class MpesaService {
             stkRequest.setBusinessShortCode(businessShortcode);
             stkRequest.setPassword(password);
             stkRequest.setTimestamp(timestamp);
+            stkRequest.setTransactionType(transactionType); // CustomerBuyGoodsOnline for Till Number
             stkRequest.setAmount(String.valueOf(request.getAmount().intValue()));
             stkRequest.setPartyA(phone);
             stkRequest.setPartyB(businessShortcode);
@@ -170,10 +186,12 @@ public class MpesaService {
 
             log.info("STK Push Request Details:");
             log.info("  BusinessShortCode: {}", stkRequest.getBusinessShortCode());
+            log.info("  TransactionType: {}", stkRequest.getTransactionType());
             log.info("  Amount: {}", stkRequest.getAmount());
             log.info("  PartyA: {}", stkRequest.getPartyA());
             log.info("  PartyB: {}", stkRequest.getPartyB());
             log.info("  CallbackURL: {}", stkRequest.getCallBackURL());
+            log.info("  AccountReference: {}", stkRequest.getAccountReference());
 
             // Make API call
             HttpHeaders headers = new HttpHeaders();
