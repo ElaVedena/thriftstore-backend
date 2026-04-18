@@ -316,18 +316,34 @@ public class OrderController {
         }
     }
 
-    @GetMapping("/{orderId}")
-    public ResponseEntity<?> getOrderById(@PathVariable Long orderId,
-                                          @AuthenticationPrincipal UserDetailsImpl currentUser) {
+    /**
+     * Get order by either numeric ID OR order number (e.g., ORD-xxxxx)
+     * This single endpoint handles both formats
+     */
+    @GetMapping("/{identifier}")
+    public ResponseEntity<?> getOrder(@PathVariable String identifier,
+                                      @AuthenticationPrincipal UserDetailsImpl currentUser) {
         try {
-            log.info("Fetching order with ID: {} for user: {}", orderId, currentUser.getId());
+            log.info("Fetching order with identifier: {} for user: {}", identifier, currentUser.getId());
             
-            Order order = orderRepository.findById(orderId)
-                    .orElse(null);
+            Order order = null;
+            
+            // Check if identifier is numeric (database ID) or alphanumeric (order number)
+            if (identifier.matches("\\d+")) {
+                // It's a numeric ID
+                Long id = Long.parseLong(identifier);
+                order = orderRepository.findById(id).orElse(null);
+                log.info("Querying by numeric ID: {}", id);
+            } else {
+                // It's an order number (like ORD-xxxxx or VTHxxxxx)
+                order = orderRepository.findByOrderNumber(identifier).orElse(null);
+                log.info("Querying by order number: {}", identifier);
+            }
 
             if (order == null) {
-                log.warn("Order not found with ID: {}", orderId);
-                return ResponseEntity.notFound().build();
+                log.warn("Order not found with identifier: {}", identifier);
+                return ResponseEntity.status(404)
+                    .body(new ApiResponse(false, "Order not found with identifier: " + identifier));
             }
 
             // Check if order belongs to user or user is admin
@@ -335,13 +351,13 @@ public class OrderController {
                 .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
                 
             if (!order.getUser().getId().equals(currentUser.getId()) && !isAdmin) {
-                log.warn("Access denied for user {} to order {}", currentUser.getId(), orderId);
+                log.warn("Access denied for user {} to order {}", currentUser.getId(), identifier);
                 return ResponseEntity.status(403).body(new ApiResponse(false, "Access denied"));
             }
             
             // For non-admin users, hide pending orders
             if (!isAdmin && !VISIBLE_STATUSES.contains(order.getStatus())) {
-                log.warn("User attempted to view pending order {}", orderId);
+                log.warn("User attempted to view pending order {}", identifier);
                 return ResponseEntity.status(403).body(new ApiResponse(false, "Order not available"));
             }
 
