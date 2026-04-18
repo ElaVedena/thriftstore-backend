@@ -82,8 +82,7 @@ public class MpesaService {
 
     /**
      * Generate STK push password
-     * For production: uses your actual shortcode/till number
-     * For sandbox: uses 174379
+     * IMPORTANT: Password uses BusinessShortcode (Shortcode), NOT the till number
      */
     public String generatePassword() {
         String businessCode;
@@ -94,14 +93,11 @@ public class MpesaService {
             passkey = "bfb279f9aa9bdbcf158e97dd71a467cd2e0c893059b10f78e6b72ada1ed2c919";
             log.debug("Using SANDBOX credentials for password generation");
         } else {
-            // For production, use tillNumber if available, otherwise shortcode
-            if (mpesaConfig.getTillNumber() != null && !mpesaConfig.getTillNumber().isEmpty()) {
-                businessCode = mpesaConfig.getTillNumber();
-            } else {
-                businessCode = mpesaConfig.getShortcode();
-            }
+            // Password uses the BusinessShortcode (your Go Live shortcode)
+            businessCode = mpesaConfig.getShortcode();
             passkey = mpesaConfig.getPasskey();
             log.debug("Using PRODUCTION credentials for password generation");
+            log.debug("BusinessCode for password: {}", businessCode);
         }
         
         String timestamp = generateTimestamp();
@@ -112,33 +108,33 @@ public class MpesaService {
     }
 
     /**
-     * Get the business shortcode for STK push
+     * Get the Business Shortcode (for STK push)
+     * This is your Go Live shortcode, NOT the till number
      */
     public String getBusinessShortcode() {
         if (mpesaConfig.isSandbox()) {
             return "174379";
         }
-        // For production, use tillNumber if available, otherwise shortcode
-        if (mpesaConfig.getTillNumber() != null && !mpesaConfig.getTillNumber().isEmpty()) {
-            return mpesaConfig.getTillNumber();
-        }
         return mpesaConfig.getShortcode();
     }
 
     /**
-     * Get transaction type based on shortcode type
-     * For Till Numbers: CustomerBuyGoodsOnline
-     * For Paybill: CustomerPayBillOnline
+     * Get the Till Number (PartyB)
+     * This is where customers pay to
+     */
+    public String getTillNumber() {
+        if (mpesaConfig.isSandbox()) {
+            return "174379";
+        }
+        return mpesaConfig.getTillNumber();
+    }
+
+    /**
+     * Get transaction type
+     * For till payments, use CustomerBuyGoodsOnline
      */
     public String getTransactionType() {
-        if (mpesaConfig.isSandbox()) {
-            return "CustomerBuyGoodsOnline";
-        }
-        // For production Till Number, use CustomerBuyGoodsOnline
-        if (mpesaConfig.getTillNumber() != null && !mpesaConfig.getTillNumber().isEmpty()) {
-            return "CustomerBuyGoodsOnline";
-        }
-        return "CustomerPayBillOnline";
+        return "CustomerBuyGoodsOnline";
     }
 
     /**
@@ -175,22 +171,28 @@ public class MpesaService {
             // Generate password and timestamp
             String password = generatePassword();
             String timestamp = generateTimestamp();
-            String businessShortcode = getBusinessShortcode();
-            String transactionType = getTransactionType();
             
-            log.info("Business Shortcode (Till): {}", businessShortcode);
+            // Get the correct values
+            String businessShortcode = getBusinessShortcode();  // Your Go Live shortcode
+            String tillNumber = getTillNumber();  // Your till number (5435120)
+            String transactionType = getTransactionType();  // CustomerBuyGoodsOnline
+            
+            log.info("=== M-PESA STK PUSH CONFIGURATION ===");
+            log.info("Business Shortcode: {}", businessShortcode);
+            log.info("Till Number (PartyB): {}", tillNumber);
             log.info("Transaction Type: {}", transactionType);
             log.info("Timestamp: {}", timestamp);
+            log.info("=====================================");
 
             // Build STK push request
             StkPushRequest stkRequest = new StkPushRequest();
-            stkRequest.setBusinessShortCode(businessShortcode);
+            stkRequest.setBusinessShortCode(businessShortcode);  // Your Go Live shortcode
             stkRequest.setPassword(password);
             stkRequest.setTimestamp(timestamp);
-            stkRequest.setTransactionType(transactionType);
+            stkRequest.setTransactionType(transactionType);  // CustomerBuyGoodsOnline
             stkRequest.setAmount(String.valueOf(request.getAmount().intValue()));
-            stkRequest.setPartyA(phone);
-            stkRequest.setPartyB(businessShortcode);  // PartyB is the same as BusinessShortCode for Buy Goods
+            stkRequest.setPartyA(phone);  // Customer's phone
+            stkRequest.setPartyB(tillNumber);  // Your till number (5435120)
             stkRequest.setPhoneNumber(phone);
             stkRequest.setCallBackURL(mpesaConfig.getCallbackUrl());
             stkRequest.setAccountReference(request.getAccountReference());
@@ -253,13 +255,15 @@ public class MpesaService {
                 e.getStatusCode(), e.getResponseBodyAsString());
             
             String errorBody = e.getResponseBodyAsString();
+            if (errorBody.contains("Merchant does not exist")) {
+                log.error("   This means your BusinessShortcode or PartyB is incorrect!");
+                log.error("   BusinessShortcode should be your Go Live shortcode");
+                log.error("   PartyB should be your till number (5435120)");
+                log.error("   Check MPESA_SHORTCODE and MPESA_TILL_NUMBER in Railway variables");
+            }
             if (errorBody.contains("Wrong credentials")) {
                 log.error("   This means your production credentials are incorrect!");
-                log.error("   Check that you have set the correct values in Railway:");
-                log.error("   - MPESA_CONSUMER_KEY (production key, not sandbox)");
-                log.error("   - MPESA_CONSUMER_SECRET (production secret, not sandbox)");
-                log.error("   - MPESA_SHORTCODE or MPESA_TILL_NUMBER (your actual production number)");
-                log.error("   - MPESA_PASSKEY (your production passkey)");
+                log.error("   Check MPESA_CONSUMER_KEY and MPESA_CONSUMER_SECRET");
             }
             if (errorBody.contains("Invalid CallBackURL")) {
                 log.error("   Your callback URL is invalid or not accessible!");
