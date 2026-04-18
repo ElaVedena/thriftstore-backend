@@ -82,27 +82,32 @@ public class MpesaService {
 
     /**
      * Generate STK push password
-     * For production: uses your actual shortcode
+     * For production: uses your actual shortcode/till number
      * For sandbox: uses 174379
      */
     public String generatePassword() {
-        String shortcode;
+        String businessCode;
         String passkey;
         
         if (mpesaConfig.isSandbox()) {
-            shortcode = "174379";
+            businessCode = "174379";
             passkey = "bfb279f9aa9bdbcf158e97dd71a467cd2e0c893059b10f78e6b72ada1ed2c919";
             log.debug("Using SANDBOX credentials for password generation");
         } else {
-            shortcode = mpesaConfig.getShortcode();
+            // For production, use tillNumber if available, otherwise shortcode
+            if (mpesaConfig.getTillNumber() != null && !mpesaConfig.getTillNumber().isEmpty()) {
+                businessCode = mpesaConfig.getTillNumber();
+            } else {
+                businessCode = mpesaConfig.getShortcode();
+            }
             passkey = mpesaConfig.getPasskey();
             log.debug("Using PRODUCTION credentials for password generation");
         }
         
         String timestamp = generateTimestamp();
-        String data = shortcode + passkey + timestamp;
+        String data = businessCode + passkey + timestamp;
         String encoded = Base64.getEncoder().encodeToString(data.getBytes(StandardCharsets.UTF_8));
-        log.debug("Generated password - Shortcode: {}, Timestamp: {}", shortcode, timestamp);
+        log.debug("Generated password - BusinessCode: {}, Timestamp: {}", businessCode, timestamp);
         return encoded;
     }
 
@@ -112,6 +117,10 @@ public class MpesaService {
     public String getBusinessShortcode() {
         if (mpesaConfig.isSandbox()) {
             return "174379";
+        }
+        // For production, use tillNumber if available, otherwise shortcode
+        if (mpesaConfig.getTillNumber() != null && !mpesaConfig.getTillNumber().isEmpty()) {
+            return mpesaConfig.getTillNumber();
         }
         return mpesaConfig.getShortcode();
     }
@@ -126,7 +135,10 @@ public class MpesaService {
             return "CustomerBuyGoodsOnline";
         }
         // For production Till Number, use CustomerBuyGoodsOnline
-        return "CustomerBuyGoodsOnline";
+        if (mpesaConfig.getTillNumber() != null && !mpesaConfig.getTillNumber().isEmpty()) {
+            return "CustomerBuyGoodsOnline";
+        }
+        return "CustomerPayBillOnline";
     }
 
     /**
@@ -166,7 +178,7 @@ public class MpesaService {
             String businessShortcode = getBusinessShortcode();
             String transactionType = getTransactionType();
             
-            log.info("Business Shortcode: {}", businessShortcode);
+            log.info("Business Shortcode (Till): {}", businessShortcode);
             log.info("Transaction Type: {}", transactionType);
             log.info("Timestamp: {}", timestamp);
 
@@ -175,10 +187,10 @@ public class MpesaService {
             stkRequest.setBusinessShortCode(businessShortcode);
             stkRequest.setPassword(password);
             stkRequest.setTimestamp(timestamp);
-            stkRequest.setTransactionType(transactionType); // CustomerBuyGoodsOnline for Till Number
+            stkRequest.setTransactionType(transactionType);
             stkRequest.setAmount(String.valueOf(request.getAmount().intValue()));
             stkRequest.setPartyA(phone);
-            stkRequest.setPartyB(businessShortcode);
+            stkRequest.setPartyB(businessShortcode);  // PartyB is the same as BusinessShortCode for Buy Goods
             stkRequest.setPhoneNumber(phone);
             stkRequest.setCallBackURL(mpesaConfig.getCallbackUrl());
             stkRequest.setAccountReference(request.getAccountReference());
@@ -246,8 +258,12 @@ public class MpesaService {
                 log.error("   Check that you have set the correct values in Railway:");
                 log.error("   - MPESA_CONSUMER_KEY (production key, not sandbox)");
                 log.error("   - MPESA_CONSUMER_SECRET (production secret, not sandbox)");
-                log.error("   - MPESA_SHORTCODE (your actual production shortcode, not 174379)");
+                log.error("   - MPESA_SHORTCODE or MPESA_TILL_NUMBER (your actual production number)");
                 log.error("   - MPESA_PASSKEY (your production passkey)");
+            }
+            if (errorBody.contains("Invalid CallBackURL")) {
+                log.error("   Your callback URL is invalid or not accessible!");
+                log.error("   Make sure MPESA_CALLBACK_URL is set to a public HTTPS URL");
             }
             
             throw new RuntimeException("STK push failed with HTTP " + e.getStatusCode() + 

@@ -15,6 +15,7 @@ public class MpesaConfig {
     private String consumerSecret;
     private String passkey;
     private String shortcode;
+    private String tillNumber;  // ← ADD THIS for your till number 5435120
     private String environment;
     private String baseUrl;
     private String callbackUrl;
@@ -43,6 +44,7 @@ public class MpesaConfig {
         log.info("Environment: {}", environment);
         log.info("Base URL: {}", baseUrl);
         log.info("Shortcode: {}", shortcode);
+        log.info("Till Number: {}", tillNumber);
         log.info("Callback URL: {}", callbackUrl);
         log.info("Consumer Key: {}", maskString(consumerKey));
         log.info("Consumer Secret: {}", maskString(consumerSecret));
@@ -61,6 +63,9 @@ public class MpesaConfig {
         }
         if (shortcode == null || shortcode.isEmpty()) {
             log.error("❌ MPESA_SHORTCODE is not set!");
+        }
+        if (tillNumber == null || tillNumber.isEmpty()) {
+            log.warn("⚠️ MPESA_TILL_NUMBER is not set! (Required for Buy Goods)");
         }
         if (callbackUrl == null || callbackUrl.isEmpty()) {
             log.warn("⚠️ MPESA_CALLBACK_URL is not set!");
@@ -91,20 +96,39 @@ public class MpesaConfig {
     /**
      * Get the appropriate shortcode for STK push
      * For sandbox, always use 174379
-     * For production, use the configured shortcode
+     * For production, use the configured shortcode (PayBill) or tillNumber (Buy Goods)
      */
     public String getStkShortcode() {
         if (isSandbox()) {
             return "174379";
         }
+        // For Buy Goods (Till), use tillNumber if available, otherwise fallback to shortcode
+        if (tillNumber != null && !tillNumber.isEmpty()) {
+            return tillNumber;
+        }
         return shortcode;
     }
     
     /**
-     * Get the party B (payee) shortcode
-     * Usually the same as the business shortcode
+     * Get the transaction type
+     * "CustomerPayBillOnline" for PayBill, "CustomerBuyGoodsOnline" for Till
+     */
+    public String getTransactionType() {
+        if (tillNumber != null && !tillNumber.isEmpty()) {
+            return "CustomerBuyGoodsOnline";
+        }
+        return "CustomerPayBillOnline";
+    }
+    
+    /**
+     * Get the party B (payee)
+     * For Buy Goods, this is the till number
+     * For PayBill, this is the shortcode
      */
     public String getPartyB() {
+        if (tillNumber != null && !tillNumber.isEmpty()) {
+            return tillNumber;
+        }
         return getStkShortcode();
     }
     
