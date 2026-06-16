@@ -68,7 +68,7 @@ public class CloudinaryService {
         }
     }
 
-    // Upload with resizing only (NO background removal)
+    // Upload with resizing - FIXED to preserve aspect ratio
     public Map<String, Object> uploadImageWithTransformations(MultipartFile multipartFile, 
                                                               String folder, 
                                                               int width, 
@@ -82,11 +82,15 @@ public class CloudinaryService {
             System.out.println("File size: " + multipartFile.getSize());
             System.out.println("Resize: width=" + width + ", height=" + height + ", crop=" + cropMode);
             
-            // Build transformation string (resize only)
+            // FIX: Use 'limit' crop mode which preserves aspect ratio
+            // 'limit' scales down to fit within dimensions WITHOUT cropping or stretching
+            String effectiveCrop = "limit";
+            
+            // Build transformation string with 'limit' crop
             StringBuilder transformationStr = new StringBuilder();
             transformationStr.append("w_").append(width);
             transformationStr.append(",h_").append(height);
-            transformationStr.append(",c_").append(cropMode);
+            transformationStr.append(",c_").append(effectiveCrop);
             
             // Add optimization (quality and format)
             transformationStr.append(",q_auto,f_auto");
@@ -175,7 +179,7 @@ public class CloudinaryService {
         Transformation transformation = new Transformation()
                 .width(width)
                 .height(height)
-                .crop("scale")
+                .crop("limit")  // FIXED: Use 'limit' to preserve aspect ratio
                 .quality("auto")
                 .fetchFormat("auto");
         
@@ -190,7 +194,7 @@ public class CloudinaryService {
                 .transformation(new Transformation()
                         .width(300)
                         .height(300)
-                        .crop("scale")
+                        .crop("limit")  // FIXED: Use 'limit' to preserve aspect ratio
                         .quality("auto")
                         .fetchFormat("auto"))
                 .generate(publicId);
@@ -202,7 +206,7 @@ public class CloudinaryService {
                 .transformation(new Transformation()
                         .width(150)
                         .height(150)
-                        .crop("scale")  
+                        .crop("limit")  // FIXED: Use 'limit' to preserve aspect ratio
                         .quality("auto")
                         .fetchFormat("auto"))
                 .generate(publicId);

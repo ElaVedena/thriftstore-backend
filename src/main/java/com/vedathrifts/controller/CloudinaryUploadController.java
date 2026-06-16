@@ -32,7 +32,6 @@ public class CloudinaryUploadController {
             for (MultipartFile file : files) {
                 System.out.println("Processing file: " + file.getOriginalFilename());
                 
-                // Validate file
                 if (file.isEmpty()) {
                     return ResponseEntity.badRequest()
                             .body(new ApiResponse(false, "File is empty"));
@@ -44,13 +43,13 @@ public class CloudinaryUploadController {
                             .body(new ApiResponse(false, "File must be an image"));
                 }
 
-                // Upload to Cloudinary with resizing ONLY (no background removal)
+                // FIX: Use 'limit' crop mode to preserve aspect ratio
                 Map<String, Object> uploadResult = cloudinaryService.uploadImageWithTransformations(
                     file, 
                     "vedathrifts/products",
-                    400,     // width
-                    400,     // height
-                    "scale", // crop mode - NO cropping, scales to fit
+                    800,     // width - max width
+                    800,     // height - max height
+                    "limit", // FIXED: Use 'limit' instead of 'scale'
                     false    // removeBackground = false
                 );
                 
@@ -109,13 +108,13 @@ public class CloudinaryUploadController {
                             .body(new ApiResponse(false, "File must be an image"));
                 }
 
-                // Upload to Cloudinary with resizing for reviews (smaller)
+                // FIX: Use 'limit' crop mode for reviews too
                 Map<String, Object> uploadResult = cloudinaryService.uploadImageWithTransformations(
                     file, 
                     "vedathrifts/reviews",
-                    200,     // width
-                    200,     // height
-                    "scale", 
+                    400,     // width
+                    400,     // height
+                    "limit", // FIXED: Use 'limit' instead of 'scale'
                     false    // no background removal
                 );
                 
