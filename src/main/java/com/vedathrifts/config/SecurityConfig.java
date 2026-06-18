@@ -45,11 +45,8 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
         
-        configuration.setAllowedOrigins(Arrays.asList(
-            "http://localhost:3000",
-            "https://vedathrifts.com",
-            "https://www.vedathrifts.com"
-        ));
+        // Allow all origins for flexibility
+        configuration.setAllowedOriginPatterns(Arrays.asList("*"));
         
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
         configuration.setAllowedHeaders(Arrays.asList(
@@ -58,7 +55,9 @@ public class SecurityConfig {
             "Accept",
             "X-Requested-With",
             "Cache-Control",
-            "Origin"
+            "Origin",
+            "Access-Control-Allow-Origin",
+            "Access-Control-Allow-Headers"
         ));
         configuration.setExposedHeaders(Arrays.asList(
             "Authorization",
@@ -75,10 +74,13 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-            // Use cors configuration source - NOT a separate filter
+            // Enable CORS with our configuration
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+            // Disable CSRF for stateless API
             .csrf(csrf -> csrf.disable())
+            // Set session management to stateless
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            // Authorize requests
             .authorizeHttpRequests(auth -> auth
                 // PUBLIC ENDPOINTS
                 .requestMatchers(
@@ -98,10 +100,10 @@ public class SecurityConfig {
                     "/api/mpesa/ping",                  
                     "/mpesa/callback",                  
                     "/mpesa/callback-test",
-                    "/mpesa/ping",
-                    "/admin/revenue/**"
+                    "/mpesa/ping"
                 ).permitAll()
                 
+                // OPTIONS requests for CORS preflight
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 
                 // AUTHENTICATED ENDPOINTS 
@@ -118,8 +120,10 @@ public class SecurityConfig {
                     "/uploads/product-images"  
                 ).hasRole("ADMIN")
                 
+                // All other requests require authentication
                 .anyRequest().authenticated()
             )
+            // Add JWT filter before UsernamePasswordAuthenticationFilter
             .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
