@@ -17,7 +17,6 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
-import org.springframework.web.filter.CorsFilter;
 
 import java.util.Arrays;
 
@@ -43,18 +42,17 @@ public class SecurityConfig {
     }
 
     @Bean
-    public CorsFilter corsFilter() {
-        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        CorsConfiguration config = new CorsConfiguration();
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration configuration = new CorsConfiguration();
         
-        config.setAllowedOrigins(Arrays.asList(
+        configuration.setAllowedOrigins(Arrays.asList(
             "http://localhost:3000",
             "https://vedathrifts.com",
             "https://www.vedathrifts.com"
         ));
         
-        config.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
-        config.setAllowedHeaders(Arrays.asList(
+        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
+        configuration.setAllowedHeaders(Arrays.asList(
             "Authorization",
             "Content-Type",
             "Accept",
@@ -62,22 +60,23 @@ public class SecurityConfig {
             "Cache-Control",
             "Origin"
         ));
-        config.setExposedHeaders(Arrays.asList(
+        configuration.setExposedHeaders(Arrays.asList(
             "Authorization",
             "Content-Type"
         ));
-        config.setAllowCredentials(true);
-        config.setMaxAge(3600L);
+        configuration.setAllowCredentials(true);
+        configuration.setMaxAge(3600L);
         
-        source.registerCorsConfiguration("/**", config);
-        return new CorsFilter(source);
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", configuration);
+        return source;
     }
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-            // Add CORS filter at the beginning
-            .addFilter(corsFilter())
+            // Use cors configuration source - NOT a separate filter
+            .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .csrf(csrf -> csrf.disable())
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
