@@ -21,7 +21,8 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/admin/revenue")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*", maxAge = 3600)
+@CrossOrigin(origins = {"http://localhost:3000", "https://vedathrifts.com", "https://www.vedathrifts.com"}, allowCredentials = "true")
+
 public class RevenueController {
 
     private final OrderRepository orderRepository;
