@@ -17,6 +17,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import org.springframework.web.filter.CorsFilter;
 
 import java.util.Arrays;
 
@@ -42,17 +43,18 @@ public class SecurityConfig {
     }
 
     @Bean
-    public CorsConfigurationSource corsConfigurationSource() {
-        CorsConfiguration configuration = new CorsConfiguration();
+    public CorsFilter corsFilter() {
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        CorsConfiguration config = new CorsConfiguration();
         
-        configuration.setAllowedOrigins(Arrays.asList(
+        config.setAllowedOrigins(Arrays.asList(
             "http://localhost:3000",
             "https://vedathrifts.com",
             "https://www.vedathrifts.com"
         ));
         
-        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
-        configuration.setAllowedHeaders(Arrays.asList(
+        config.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
+        config.setAllowedHeaders(Arrays.asList(
             "Authorization",
             "Content-Type",
             "Accept",
@@ -60,26 +62,26 @@ public class SecurityConfig {
             "Cache-Control",
             "Origin"
         ));
-        configuration.setExposedHeaders(Arrays.asList(
+        config.setExposedHeaders(Arrays.asList(
             "Authorization",
             "Content-Type"
         ));
-        configuration.setAllowCredentials(true);
-        configuration.setMaxAge(3600L);
+        config.setAllowCredentials(true);
+        config.setMaxAge(3600L);
         
-        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration("/**", configuration);
-        return source;
+        source.registerCorsConfiguration("/**", config);
+        return new CorsFilter(source);
     }
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-            .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+            // Add CORS filter at the beginning
+            .addFilter(corsFilter())
             .csrf(csrf -> csrf.disable())
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
-                //  PUBLIC ENDPOINTS
+                // PUBLIC ENDPOINTS
                 .requestMatchers(
                     "/auth/**",
                     "/products/**",           
@@ -97,12 +99,13 @@ public class SecurityConfig {
                     "/api/mpesa/ping",                  
                     "/mpesa/callback",                  
                     "/mpesa/callback-test",
-                    "/mpesa/ping"
+                    "/mpesa/ping",
+                    "/admin/revenue/**"
                 ).permitAll()
                 
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 
-                // 🔐 AUTHENTICATED ENDPOINTS 
+                // AUTHENTICATED ENDPOINTS 
                 .requestMatchers(
                     "/cart/**",
                     "/wishlist/**",
@@ -110,7 +113,7 @@ public class SecurityConfig {
                     "/users/change-password/**"
                 ).authenticated()
                 
-                // 👑 ADMIN ENDPOINTS 
+                // ADMIN ENDPOINTS 
                 .requestMatchers(
                     "/admin/**",
                     "/uploads/product-images"  
