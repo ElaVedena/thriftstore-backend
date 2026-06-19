@@ -155,6 +155,9 @@ public class AdminController {
             @RequestParam(required = false) String startDate,
             @RequestParam(required = false) String endDate) {
         try {
+            log.info("========== REVENUE STATS REQUEST ==========");
+            log.info("Filter: {}, StartDate: {}, EndDate: {}", filter, startDate, endDate);
+            
             Map<String, Object> stats = new HashMap<>();
             LocalDateTime endDateTime = LocalDateTime.now();
             LocalDateTime startDateTime;
@@ -164,37 +167,63 @@ public class AdminController {
                 LocalDate endLocalDate = LocalDate.parse(endDate);
                 startDateTime = startLocalDate.atStartOfDay();
                 endDateTime = endLocalDate.atTime(23, 59, 59);
+                log.info("Custom range: {} to {}", startDateTime, endDateTime);
             } else {
                 switch(filter) {
                     case "today":
                         startDateTime = endDateTime.withHour(0).withMinute(0).withSecond(0);
+                        log.info("Filter: Today - from {}", startDateTime);
                         break;
                     case "week":
                         startDateTime = endDateTime.minusDays(7);
+                        log.info("Filter: Week - from {}", startDateTime);
                         break;
                     case "month":
                         startDateTime = endDateTime.minusMonths(1);
+                        log.info("Filter: Month - from {}", startDateTime);
                         break;
                     default:
                         startDateTime = endDateTime.withHour(0).withMinute(0).withSecond(0);
+                        log.info("Filter: Default - from {}", startDateTime);
                 }
             }
             
+            // Get ALL orders in date range
             List<com.vedathrifts.model.Order> allOrders = orderRepository.findByDateRange(startDateTime, endDateTime);
+            log.info("Total orders in date range: {}", allOrders.size());
             
-            Double totalRevenue = allOrders.stream()
-                    .filter(o -> "DELIVERED".equals(o.getStatus()))
+            // Log status counts for debugging
+            Map<String, Long> statusCounts = allOrders.stream()
+                .collect(Collectors.groupingBy(com.vedathrifts.model.Order::getStatus, Collectors.counting()));
+            log.info("Status counts: {}", statusCounts);
+            
+            // Include PAID, COMPLETED, SUCCESS, and DELIVERED orders (all paid orders)
+            List<com.vedathrifts.model.Order> paidOrders = allOrders.stream()
+                    .filter(o -> {
+                        String status = o.getStatus();
+                        return "PAID".equals(status) || 
+                               "COMPLETED".equals(status) || 
+                               "SUCCESS".equals(status) ||
+                               "DELIVERED".equals(status);
+                    })
+                    .collect(Collectors.toList());
+            
+            log.info("Paid orders in date range: {}", paidOrders.size());
+            
+            // Calculate revenue from paid orders
+            Double totalRevenue = paidOrders.stream()
                     .mapToDouble(com.vedathrifts.model.Order::getTotal)
                     .sum();
             
-            long deliveredOrderCount = allOrders.stream()
-                    .filter(o -> "DELIVERED".equals(o.getStatus()))
-                    .count();
+            long paidOrderCount = paidOrders.size();
+            
+            log.info("Total Revenue: {}, Order Count: {}", totalRevenue, paidOrderCount);
             
             stats.put("totalRevenue", totalRevenue);
-            stats.put("orderCount", deliveredOrderCount);
+            stats.put("orderCount", paidOrderCount);
             
-            if ("week".equals(filter) || ("custom".equals(filter) && startDate != null && endDate != null)) {
+            // Build daily data
+            if ("week".equals(filter) || "month".equals(filter) || ("custom".equals(filter) && startDate != null && endDate != null)) {
                 List<Map<String, Object>> dailyData = new ArrayList<>();
                 double maxRevenue = 0;
                 
@@ -202,20 +231,31 @@ public class AdminController {
                 LocalDate end = endDateTime.toLocalDate();
                 long daysBetween = ChronoUnit.DAYS.between(start, end);
                 
-                if (daysBetween > 31) {
-                    daysBetween = 31;
+                if (daysBetween > 60) {
+                    daysBetween = 60; // Limit to prevent too many data points
                 }
+                
+                // Get all paid orders for the period
+                List<com.vedathrifts.model.Order> allPaidOrdersInRange = orderRepository.findByDateRange(startDateTime, endDateTime).stream()
+                    .filter(o -> {
+                        String status = o.getStatus();
+                        return "PAID".equals(status) || 
+                               "COMPLETED".equals(status) || 
+                               "SUCCESS".equals(status) ||
+                               "DELIVERED".equals(status);
+                    })
+                    .collect(Collectors.toList());
+                
+                // Group by date
+                Map<LocalDate, Double> dailyRevenueMap = allPaidOrdersInRange.stream()
+                    .collect(Collectors.groupingBy(
+                        order -> order.getCreatedAt().toLocalDate(),
+                        Collectors.summingDouble(com.vedathrifts.model.Order::getTotal)
+                    ));
                 
                 for (int i = 0; i <= daysBetween; i++) {
                     LocalDate currentDate = start.plusDays(i);
-                    LocalDateTime dayStart = currentDate.atStartOfDay();
-                    LocalDateTime dayEnd = currentDate.atTime(23, 59, 59);
-                    
-                    List<com.vedathrifts.model.Order> dayOrders = orderRepository.findByDateRange(dayStart, dayEnd);
-                    Double dayRevenue = dayOrders.stream()
-                            .filter(o -> "DELIVERED".equals(o.getStatus()))
-                            .mapToDouble(com.vedathrifts.model.Order::getTotal)
-                            .sum();
+                    Double dayRevenue = dailyRevenueMap.getOrDefault(currentDate, 0.0);
                     
                     if (dayRevenue > maxRevenue) maxRevenue = dayRevenue;
                     
@@ -229,9 +269,10 @@ public class AdminController {
                 stats.put("maxRevenue", maxRevenue);
             }
             
-            List<Map<String, Object>> recentOrdersList = allOrders.stream()
-                    .filter(o -> "DELIVERED".equals(o.getStatus()))
-                    .limit(10)
+            // Recent orders (last 5 paid orders)
+            List<Map<String, Object>> recentOrdersList = paidOrders.stream()
+                    .sorted((a, b) -> b.getCreatedAt().compareTo(a.getCreatedAt()))
+                    .limit(5)
                     .map(order -> {
                         Map<String, Object> orderMap = new HashMap<>();
                         orderMap.put("id", order.getId());
@@ -251,10 +292,16 @@ public class AdminController {
             
             stats.put("recentOrders", recentOrdersList);
             
+            // Top products (optional)
+            List<Map<String, Object>> topProducts = new ArrayList<>();
+            // You can add product aggregation here if needed
+            
+            stats.put("topProducts", topProducts);
+            
             return ResponseEntity.ok(stats);
             
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("Failed to get revenue stats: ", e);
             return ResponseEntity.status(500)
                     .body(new ApiResponse(false, "Failed to fetch revenue stats: " + e.getMessage()));
         }
