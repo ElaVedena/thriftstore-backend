@@ -190,7 +190,7 @@ public class AdminController {
                 }
             }
             
-            // Get ALL orders in date range (including ALL statuses for debugging)
+            // Get ALL orders in date range
             List<com.vedathrifts.model.Order> allOrders = orderRepository.findByDateRange(startDateTime, endDateTime);
             log.info("Total orders in date range: {}", allOrders.size());
             
@@ -199,28 +199,32 @@ public class AdminController {
                 .collect(Collectors.groupingBy(com.vedathrifts.model.Order::getStatus, Collectors.counting()));
             log.info("Status counts: {}", statusCounts);
             
-            // Include ALL orders for debugging purposes
-            // This will show us what statuses your orders actually have
-            List<com.vedathrifts.model.Order> paidOrders = allOrders;
+            // FIX: Only include PAID and COMPLETED orders (paid orders only)
+            // Do NOT include PENDING, PENDING_PAYMENT, PROCESSING, etc.
+            List<String> paidStatuses = Arrays.asList("PAID", "COMPLETED", "SUCCESS", "DELIVERED");
             
-            log.info("Orders included in revenue calculation (ALL): {}", paidOrders.size());
+            List<com.vedathrifts.model.Order> paidOrders = allOrders.stream()
+                    .filter(o -> paidStatuses.contains(o.getStatus()))
+                    .collect(Collectors.toList());
             
-            // Calculate revenue from all orders
+            log.info("Paid orders in date range: {} out of {} total", paidOrders.size(), allOrders.size());
+            
+            // Calculate revenue from paid orders only
             Double totalRevenue = paidOrders.stream()
                     .mapToDouble(com.vedathrifts.model.Order::getTotal)
                     .sum();
             
             long paidOrderCount = paidOrders.size();
             
-            log.info("Total Revenue (ALL ORDERS): {}, Order Count: {}", totalRevenue, paidOrderCount);
+            log.info("Total Revenue (PAID ORDERS ONLY): {}, Order Count: {}", totalRevenue, paidOrderCount);
             
-            // IMPORTANT: Return raw data directly, NOT wrapped in ApiResponse
-            // This is what the frontend expects
+            // Return raw data directly
             stats.put("totalRevenue", totalRevenue);
             stats.put("orderCount", paidOrderCount);
             stats.put("debugStatusCounts", statusCounts);
+            stats.put("debugPaidStatuses", paidStatuses);
             
-            // Build daily data
+            // Build daily data for paid orders only
             List<Map<String, Object>> dailyData = new ArrayList<>();
             double maxRevenue = 0;
             
@@ -232,8 +236,8 @@ public class AdminController {
                 daysBetween = 60;
             }
             
-            // Group all orders by date
-            Map<LocalDate, Double> dailyRevenueMap = allOrders.stream()
+            // Group paid orders by date
+            Map<LocalDate, Double> dailyRevenueMap = paidOrders.stream()
                 .collect(Collectors.groupingBy(
                     order -> order.getCreatedAt().toLocalDate(),
                     Collectors.summingDouble(com.vedathrifts.model.Order::getTotal)
@@ -254,8 +258,8 @@ public class AdminController {
             stats.put("dailyData", dailyData);
             stats.put("maxRevenue", maxRevenue);
             
-            // Recent orders
-            List<Map<String, Object>> recentOrdersList = allOrders.stream()
+            // Recent paid orders (last 5)
+            List<Map<String, Object>> recentOrdersList = paidOrders.stream()
                     .sorted((a, b) -> b.getCreatedAt().compareTo(a.getCreatedAt()))
                     .limit(5)
                     .map(order -> {
