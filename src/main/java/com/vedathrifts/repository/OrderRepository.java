@@ -26,17 +26,6 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     // Find orders by status with pagination
     Page<Order> findByStatus(String status, Pageable pageable);
     
-    // Find orders by multiple statuses (for revenue calculation)
-    @Query("SELECT o FROM Order o WHERE o.status IN :statuses")
-    List<Order> findByStatusIn(@Param("statuses") List<String> statuses);
-    
-    // Find orders by multiple statuses with date range (for revenue)
-    @Query("SELECT o FROM Order o WHERE o.status IN :statuses AND o.createdAt BETWEEN :startDate AND :endDate")
-    List<Order> findByStatusInAndCreatedAtBetween(
-        @Param("statuses") List<String> statuses,
-        @Param("startDate") java.time.LocalDateTime startDate,
-        @Param("endDate") java.time.LocalDateTime endDate);
-    
     // Find orders by status with user data (for admin)
     @Query("SELECT o FROM Order o LEFT JOIN FETCH o.user WHERE o.status = :status")
     Page<Order> findByStatusWithUser(@Param("status") String status, Pageable pageable);

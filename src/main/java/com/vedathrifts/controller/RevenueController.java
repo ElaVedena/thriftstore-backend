@@ -1,3 +1,4 @@
+// src/main/java/com/vedathrifts/controller/RevenueController.java
 package com.vedathrifts.controller;
 
 import com.vedathrifts.dto.response.ApiResponse;
@@ -22,14 +23,10 @@ import java.util.stream.Collectors;
 @RequestMapping("/admin/revenue")
 @RequiredArgsConstructor
 @CrossOrigin(origins = {"http://localhost:3000", "https://vedathrifts.com", "https://www.vedathrifts.com"}, allowCredentials = "true")
-
 public class RevenueController {
 
     private final OrderRepository orderRepository;
 
-    /**
-     * Get revenue statistics for paid orders only
-     */
     @GetMapping("/stats")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<?> getRevenueStats(
@@ -41,28 +38,37 @@ public class RevenueController {
             log.info("========== REVENUE STATS REQUEST ==========");
             log.info("Filter: {}, StartDate: {}, EndDate: {}", filter, startDate, endDate);
             
-            // Get only PAID orders (completed orders)
-            List<Order> allPaidOrders = orderRepository.findByStatusIn(List.of("PAID", "COMPLETED", "SUCCESS"));
-            log.info("Found {} PAID/COMPLETED orders", allPaidOrders.size());
+            // Get ALL orders first (don't filter by status yet)
+            List<Order> allOrders = orderRepository.findAll();
+            log.info("Total orders in system: {}", allOrders.size());
             
-            // If no paid orders, log order statuses for debugging
-            if (allPaidOrders.isEmpty()) {
-                List<Order> allOrders = orderRepository.findAll();
-                log.info("Total orders in system: {}", allOrders.size());
-                Map<String, Long> statusCounts = allOrders.stream()
-                    .collect(Collectors.groupingBy(Order::getStatus, Collectors.counting()));
-                log.info("Order status counts: {}", statusCounts);
-            }
+            // Log order statuses for debugging
+            Map<String, Long> statusCounts = allOrders.stream()
+                .collect(Collectors.groupingBy(Order::getStatus, Collectors.counting()));
+            log.info("Order status counts: {}", statusCounts);
+            
+            // Get PAID orders (including COMPLETED and SUCCESS)
+            List<Order> paidOrders = allOrders.stream()
+                .filter(order -> {
+                    String status = order.getStatus();
+                    return "PAID".equals(status) || 
+                           "COMPLETED".equals(status) || 
+                           "SUCCESS".equals(status) ||
+                           "DELIVERED".equals(status);
+                })
+                .collect(Collectors.toList());
+            
+            log.info("Found {} PAID/COMPLETED orders", paidOrders.size());
             
             // Apply date filtering
-            List<Order> filteredOrders = allPaidOrders;
+            List<Order> filteredOrders = paidOrders;
             
             if (startDate != null && endDate != null) {
                 // Custom date range
                 LocalDateTime startDateTime = startDate.atStartOfDay();
                 LocalDateTime endDateTime = endDate.atTime(23, 59, 59);
                 
-                filteredOrders = allPaidOrders.stream()
+                filteredOrders = paidOrders.stream()
                     .filter(order -> {
                         LocalDateTime createdAt = order.getCreatedAt();
                         return createdAt != null && 
@@ -72,7 +78,7 @@ public class RevenueController {
                     .collect(Collectors.toList());
                 log.info("Filtered by custom date range: {} orders", filteredOrders.size());
                 
-            } else if (filter != null && !filter.isEmpty()) {
+            } else if (filter != null && !filter.isEmpty() && !"all".equals(filter)) {
                 // Apply predefined filter
                 LocalDateTime now = LocalDateTime.now();
                 LocalDateTime startDateTime = null;
@@ -80,26 +86,24 @@ public class RevenueController {
                 switch(filter) {
                     case "today":
                         startDateTime = now.toLocalDate().atStartOfDay();
-                        log.info("Filter: Today (from {})", startDateTime);
+                        log.info("Filter: Today");
                         break;
                     case "week":
                         startDateTime = now.toLocalDate().atStartOfDay().minusDays(7);
-                        log.info("Filter: This Week (from {})", startDateTime);
+                        log.info("Filter: This Week");
                         break;
                     case "month":
                         startDateTime = now.toLocalDate().atStartOfDay().minusDays(30);
-                        log.info("Filter: This Month (from {})", startDateTime);
+                        log.info("Filter: This Month");
                         break;
-                    case "all":
                     default:
-                        startDateTime = null;
-                        log.info("Filter: All time (no date filter)");
+                        log.info("Filter: All time");
                         break;
                 }
                 
                 if (startDateTime != null) {
                     final LocalDateTime finalStart = startDateTime;
-                    filteredOrders = allPaidOrders.stream()
+                    filteredOrders = paidOrders.stream()
                         .filter(order -> {
                             LocalDateTime createdAt = order.getCreatedAt();
                             return createdAt != null && !createdAt.isBefore(finalStart);
@@ -122,7 +126,7 @@ public class RevenueController {
             List<Map<String, Object>> dailyData = new ArrayList<>();
             
             if (!filteredOrders.isEmpty()) {
-                // Group orders by date (format: "MMM dd" e.g., "Jun 18")
+                // Group orders by date
                 Map<String, Double> dailyRevenue = new LinkedHashMap<>();
                 
                 for (Order order : filteredOrders) {
@@ -149,9 +153,13 @@ public class RevenueController {
                 .max()
                 .orElse(0);
             
-            // Get recent orders (last 5 for display)
+            // Get recent orders (last 5)
             List<Order> recentOrders = filteredOrders.stream()
-                .sorted((a, b) -> b.getCreatedAt().compareTo(a.getCreatedAt()))
+                .sorted((a, b) -> {
+                    if (a.getCreatedAt() == null) return 1;
+                    if (b.getCreatedAt() == null) return -1;
+                    return b.getCreatedAt().compareTo(a.getCreatedAt());
+                })
                 .limit(5)
                 .collect(Collectors.toList());
             
@@ -192,8 +200,7 @@ public class RevenueController {
             responseData.put("topProducts", topProducts);
             responseData.put("maxRevenue", maxRevenue);
             
-            log.info("Response data: totalRevenue={}, orderCount={}, dailyData={}, topProducts={}", 
-                totalRevenue, orderCount, dailyData.size(), topProducts.size());
+            log.info("Response: totalRevenue={}, orderCount={}", totalRevenue, orderCount);
             
             return ResponseEntity.ok(new ApiResponse(true, "Revenue stats retrieved", responseData));
             
