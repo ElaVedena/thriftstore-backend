@@ -10,6 +10,7 @@ import com.vedathrifts.repository.OrderRepository;
 import com.vedathrifts.repository.ProductRepository;
 import com.vedathrifts.repository.UserRepository;
 import jakarta.validation.Valid;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -26,9 +27,10 @@ import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.stream.Collectors;
 
+@Slf4j
 @RestController
 @RequestMapping("/admin")
-@CrossOrigin(origins = "http://localhost:3000", allowCredentials = "true")
+@CrossOrigin(origins = {"http://localhost:3000", "https://vedathrifts.com", "https://www.vedathrifts.com"}, allowCredentials = "true")
 public class AdminController {
 
     @Autowired
@@ -127,7 +129,7 @@ public class AdminController {
             return ResponseEntity.ok(stats);
             
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("Failed to load dashboard stats: ", e);
             Map<String, Object> errorStats = new HashMap<>();
             errorStats.put("error", "Failed to load complete dashboard stats");
             errorStats.put("message", e.getMessage());
@@ -188,7 +190,7 @@ public class AdminController {
                 }
             }
             
-            // Get ALL orders in date range
+            // Get ALL orders in date range (including ALL statuses for debugging)
             List<com.vedathrifts.model.Order> allOrders = orderRepository.findByDateRange(startDateTime, endDateTime);
             log.info("Total orders in date range: {}", allOrders.size());
             
@@ -197,80 +199,61 @@ public class AdminController {
                 .collect(Collectors.groupingBy(com.vedathrifts.model.Order::getStatus, Collectors.counting()));
             log.info("Status counts: {}", statusCounts);
             
-            // Include PAID, COMPLETED, SUCCESS, and DELIVERED orders (all paid orders)
-            List<com.vedathrifts.model.Order> paidOrders = allOrders.stream()
-                    .filter(o -> {
-                        String status = o.getStatus();
-                        return "PAID".equals(status) || 
-                               "COMPLETED".equals(status) || 
-                               "SUCCESS".equals(status) ||
-                               "DELIVERED".equals(status);
-                    })
-                    .collect(Collectors.toList());
+            // Include ALL orders for debugging purposes
+            // This will show us what statuses your orders actually have
+            List<com.vedathrifts.model.Order> paidOrders = allOrders;
             
-            log.info("Paid orders in date range: {}", paidOrders.size());
+            log.info("Orders included in revenue calculation (ALL): {}", paidOrders.size());
             
-            // Calculate revenue from paid orders
+            // Calculate revenue from all orders
             Double totalRevenue = paidOrders.stream()
                     .mapToDouble(com.vedathrifts.model.Order::getTotal)
                     .sum();
             
             long paidOrderCount = paidOrders.size();
             
-            log.info("Total Revenue: {}, Order Count: {}", totalRevenue, paidOrderCount);
+            log.info("Total Revenue (ALL ORDERS): {}, Order Count: {}", totalRevenue, paidOrderCount);
             
             stats.put("totalRevenue", totalRevenue);
             stats.put("orderCount", paidOrderCount);
+            stats.put("debugStatusCounts", statusCounts);
             
             // Build daily data
-            if ("week".equals(filter) || "month".equals(filter) || ("custom".equals(filter) && startDate != null && endDate != null)) {
-                List<Map<String, Object>> dailyData = new ArrayList<>();
-                double maxRevenue = 0;
-                
-                LocalDate start = startDateTime.toLocalDate();
-                LocalDate end = endDateTime.toLocalDate();
-                long daysBetween = ChronoUnit.DAYS.between(start, end);
-                
-                if (daysBetween > 60) {
-                    daysBetween = 60; // Limit to prevent too many data points
-                }
-                
-                // Get all paid orders for the period
-                List<com.vedathrifts.model.Order> allPaidOrdersInRange = orderRepository.findByDateRange(startDateTime, endDateTime).stream()
-                    .filter(o -> {
-                        String status = o.getStatus();
-                        return "PAID".equals(status) || 
-                               "COMPLETED".equals(status) || 
-                               "SUCCESS".equals(status) ||
-                               "DELIVERED".equals(status);
-                    })
-                    .collect(Collectors.toList());
-                
-                // Group by date
-                Map<LocalDate, Double> dailyRevenueMap = allPaidOrdersInRange.stream()
-                    .collect(Collectors.groupingBy(
-                        order -> order.getCreatedAt().toLocalDate(),
-                        Collectors.summingDouble(com.vedathrifts.model.Order::getTotal)
-                    ));
-                
-                for (int i = 0; i <= daysBetween; i++) {
-                    LocalDate currentDate = start.plusDays(i);
-                    Double dayRevenue = dailyRevenueMap.getOrDefault(currentDate, 0.0);
-                    
-                    if (dayRevenue > maxRevenue) maxRevenue = dayRevenue;
-                    
-                    Map<String, Object> dayData = new HashMap<>();
-                    dayData.put("label", currentDate.format(DateTimeFormatter.ofPattern("MMM dd")));
-                    dayData.put("total", dayRevenue);
-                    dailyData.add(dayData);
-                }
-                
-                stats.put("dailyData", dailyData);
-                stats.put("maxRevenue", maxRevenue);
+            List<Map<String, Object>> dailyData = new ArrayList<>();
+            double maxRevenue = 0;
+            
+            LocalDate start = startDateTime.toLocalDate();
+            LocalDate end = endDateTime.toLocalDate();
+            long daysBetween = ChronoUnit.DAYS.between(start, end);
+            
+            if (daysBetween > 60) {
+                daysBetween = 60;
             }
             
-            // Recent orders (last 5 paid orders)
-            List<Map<String, Object>> recentOrdersList = paidOrders.stream()
+            // Group all orders by date
+            Map<LocalDate, Double> dailyRevenueMap = allOrders.stream()
+                .collect(Collectors.groupingBy(
+                    order -> order.getCreatedAt().toLocalDate(),
+                    Collectors.summingDouble(com.vedathrifts.model.Order::getTotal)
+                ));
+            
+            for (int i = 0; i <= daysBetween; i++) {
+                LocalDate currentDate = start.plusDays(i);
+                Double dayRevenue = dailyRevenueMap.getOrDefault(currentDate, 0.0);
+                
+                if (dayRevenue > maxRevenue) maxRevenue = dayRevenue;
+                
+                Map<String, Object> dayData = new HashMap<>();
+                dayData.put("label", currentDate.format(DateTimeFormatter.ofPattern("MMM dd")));
+                dayData.put("total", dayRevenue);
+                dailyData.add(dayData);
+            }
+            
+            stats.put("dailyData", dailyData);
+            stats.put("maxRevenue", maxRevenue);
+            
+            // Recent orders
+            List<Map<String, Object>> recentOrdersList = allOrders.stream()
                     .sorted((a, b) -> b.getCreatedAt().compareTo(a.getCreatedAt()))
                     .limit(5)
                     .map(order -> {
@@ -291,14 +274,12 @@ public class AdminController {
                     .collect(Collectors.toList());
             
             stats.put("recentOrders", recentOrdersList);
+            stats.put("topProducts", new ArrayList<>());
             
-            // Top products (optional)
-            List<Map<String, Object>> topProducts = new ArrayList<>();
-            // You can add product aggregation here if needed
+            log.info("Returning revenue stats with totalRevenue: {}, orderCount: {}, statusCounts: {}", 
+                totalRevenue, paidOrderCount, statusCounts);
             
-            stats.put("topProducts", topProducts);
-            
-            return ResponseEntity.ok(stats);
+            return ResponseEntity.ok(new ApiResponse(true, "Revenue stats retrieved", stats));
             
         } catch (Exception e) {
             log.error("Failed to get revenue stats: ", e);
@@ -371,6 +352,7 @@ public class AdminController {
             return ResponseEntity.ok(new ApiResponse(true, "Product created successfully", savedProduct));
             
         } catch (Exception e) {
+            log.error("Failed to create product: ", e);
             return ResponseEntity.badRequest()
                     .body(new ApiResponse(false, "Failed to create product: " + e.getMessage()));
         }
@@ -410,6 +392,7 @@ public class AdminController {
             return ResponseEntity.ok(new ApiResponse(true, "Product updated successfully", updatedProduct));
             
         } catch (Exception e) {
+            log.error("Failed to update product: ", e);
             return ResponseEntity.badRequest()
                     .body(new ApiResponse(false, "Failed to update product: " + e.getMessage()));
         }
@@ -428,6 +411,7 @@ public class AdminController {
             return ResponseEntity.ok(new ApiResponse(true, "Product deleted successfully"));
             
         } catch (Exception e) {
+            log.error("Failed to delete product: ", e);
             return ResponseEntity.badRequest()
                     .body(new ApiResponse(false, "Failed to delete product: " + e.getMessage()));
         }
@@ -466,6 +450,7 @@ public class AdminController {
             return ResponseEntity.ok(orderResponses);
             
         } catch (Exception e) {
+            log.error("Failed to fetch orders: ", e);
             return ResponseEntity.badRequest()
                     .body(new ApiResponse(false, "Failed to fetch orders: " + e.getMessage()));
         }
@@ -481,6 +466,7 @@ public class AdminController {
             return ResponseEntity.ok(OrderResponse.fromOrder(order));
             
         } catch (Exception e) {
+            log.error("Failed to fetch order: ", e);
             return ResponseEntity.badRequest()
                     .body(new ApiResponse(false, "Failed to fetch order: " + e.getMessage()));
         }
@@ -499,6 +485,7 @@ public class AdminController {
             return ResponseEntity.ok(new ApiResponse(true, "Order status updated to " + status));
             
         } catch (Exception e) {
+            log.error("Failed to update order status: ", e);
             return ResponseEntity.badRequest()
                     .body(new ApiResponse(false, "Failed to update order status: " + e.getMessage()));
         }
@@ -554,6 +541,7 @@ public class AdminController {
             return ResponseEntity.ok(response);
             
         } catch (Exception e) {
+            log.error("Failed to fetch users: ", e);
             return ResponseEntity.badRequest()
                     .body(new ApiResponse(false, "Failed to fetch users: " + e.getMessage()));
         }
@@ -599,6 +587,7 @@ public class AdminController {
             return ResponseEntity.ok(new ApiResponse(true, "User role updated to " + role, userMap));
             
         } catch (Exception e) {
+            log.error("Failed to update user role: ", e);
             return ResponseEntity.badRequest()
                     .body(new ApiResponse(false, "Failed to update user role: " + e.getMessage()));
         }
@@ -633,6 +622,7 @@ public class AdminController {
             return ResponseEntity.ok(new ApiResponse(true, "User deleted successfully"));
             
         } catch (Exception e) {
+            log.error("Failed to delete user: ", e);
             return ResponseEntity.badRequest()
                     .body(new ApiResponse(false, "Failed to delete user: " + e.getMessage()));
         }
