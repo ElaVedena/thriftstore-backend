@@ -214,6 +214,8 @@ public class AdminController {
             
             log.info("Total Revenue (ALL ORDERS): {}, Order Count: {}", totalRevenue, paidOrderCount);
             
+            // IMPORTANT: Return raw data directly, NOT wrapped in ApiResponse
+            // This is what the frontend expects
             stats.put("totalRevenue", totalRevenue);
             stats.put("orderCount", paidOrderCount);
             stats.put("debugStatusCounts", statusCounts);
@@ -279,12 +281,20 @@ public class AdminController {
             log.info("Returning revenue stats with totalRevenue: {}, orderCount: {}, statusCounts: {}", 
                 totalRevenue, paidOrderCount, statusCounts);
             
-            return ResponseEntity.ok(new ApiResponse(true, "Revenue stats retrieved", stats));
+            // Return raw stats directly (NOT wrapped in ApiResponse)
+            return ResponseEntity.ok(stats);
             
         } catch (Exception e) {
             log.error("Failed to get revenue stats: ", e);
-            return ResponseEntity.status(500)
-                    .body(new ApiResponse(false, "Failed to fetch revenue stats: " + e.getMessage()));
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("totalRevenue", 0);
+            errorResponse.put("orderCount", 0);
+            errorResponse.put("dailyData", new ArrayList<>());
+            errorResponse.put("topProducts", new ArrayList<>());
+            errorResponse.put("recentOrders", new ArrayList<>());
+            errorResponse.put("maxRevenue", 0);
+            errorResponse.put("error", e.getMessage());
+            return ResponseEntity.status(500).body(errorResponse);
         }
     }
    
