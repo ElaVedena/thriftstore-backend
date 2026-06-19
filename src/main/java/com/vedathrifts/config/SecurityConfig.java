@@ -45,8 +45,11 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
         
-        // Allow all origins for flexibility
-        configuration.setAllowedOriginPatterns(Arrays.asList("*"));
+        configuration.setAllowedOrigins(Arrays.asList(
+            "http://localhost:3000",
+            "https://vedathrifts.com",
+            "https://www.vedathrifts.com"
+        ));
         
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
         configuration.setAllowedHeaders(Arrays.asList(
@@ -55,9 +58,7 @@ public class SecurityConfig {
             "Accept",
             "X-Requested-With",
             "Cache-Control",
-            "Origin",
-            "Access-Control-Allow-Origin",
-            "Access-Control-Allow-Headers"
+            "Origin"
         ));
         configuration.setExposedHeaders(Arrays.asList(
             "Authorization",
@@ -74,15 +75,11 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-            // Enable CORS with our configuration
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-            // Disable CSRF for stateless API
             .csrf(csrf -> csrf.disable())
-            // Set session management to stateless
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-            // Authorize requests
             .authorizeHttpRequests(auth -> auth
-                // PUBLIC ENDPOINTS
+                //  PUBLIC ENDPOINTS
                 .requestMatchers(
                     "/auth/**",
                     "/products/**",           
@@ -103,10 +100,9 @@ public class SecurityConfig {
                     "/mpesa/ping"
                 ).permitAll()
                 
-                // OPTIONS requests for CORS preflight
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 
-                // AUTHENTICATED ENDPOINTS 
+                // 🔐 AUTHENTICATED ENDPOINTS 
                 .requestMatchers(
                     "/cart/**",
                     "/wishlist/**",
@@ -114,16 +110,14 @@ public class SecurityConfig {
                     "/users/change-password/**"
                 ).authenticated()
                 
-                // ADMIN ENDPOINTS 
+                // 👑 ADMIN ENDPOINTS 
                 .requestMatchers(
                     "/admin/**",
                     "/uploads/product-images"  
                 ).hasRole("ADMIN")
                 
-                // All other requests require authentication
                 .anyRequest().authenticated()
             )
-            // Add JWT filter before UsernamePasswordAuthenticationFilter
             .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
